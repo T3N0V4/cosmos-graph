@@ -8,7 +8,7 @@ Transform the Obsidian Graph into a living cosmic visualization.
 
 ---
 
-**Cosmos Graph** is an experimental Obsidian plugin that transforms the Graph View into a dynamic cosmic environment filled with animated stars, particles, constellation-style connections, depth, parallax, and reactive visual effects.
+**Cosmos Graph** is an experimental visual plugin for Obsidian that transforms the Graph View into a dynamic cosmic environment using animated stars, particles, constellation-style connections, parallax depth and reactive visual effects.
 
 Instead of feeling like a static diagram, the graph becomes something atmospheric and alive.
 
@@ -18,22 +18,24 @@ Instead of feeling like a static diagram, the graph becomes something atmospheri
 
 ## Preview
 
-![Cosmos Graph Preview](assets/cosmos-graph-general-screen.png)
+![Cosmos Graph Preview](assets/cosmospreview.gif)
 
 ---
 
 ## What Is Cosmos Graph?
 
-Cosmos Graph reimagines Obsidian's Graph View as a living universe.
+Cosmos Graph is currently focused on enhancing the visual and atmospheric side of Obsidian’s Graph View.
 
-The project started as a visual experiment, but evolved into a broader idea:
+The plugin adds:
 
-- notes as particles,
-- important concepts as stars,
-- major hubs as massive cosmic structures,
-- connections as constellations.
+- animated cosmic backgrounds,
+- ambient particles,
+- glowing constellation-like connections,
+- parallax depth,
+- interactive visual reactions,
+- and cinematic movement effects.
 
-The goal is not only to improve aesthetics, but to explore a more expressive and immersive way of visualizing knowledge.
+The goal is to make the graph feel more immersive and expressive while still respecting the original Obsidian experience.
 
 ---
 
@@ -83,6 +85,8 @@ Instead of simply displaying connections, the graph becomes an interactive visua
 ### Settings Panel
 
 ![Settings Panel](assets/setting-panel.png)
+
+---
 
 ## Installation
 
@@ -192,13 +196,14 @@ Planned ideas and future experiments:
 
 ## Vision
 
-The long-term idea behind Cosmos Graph is to transform the graph from a static utility into an expressive visual experience.
+Cosmos Graph started as a visual experiment, but the long-term idea is bigger than aesthetics alone.
 
-Small notes could feel like particles drifting through space.
+Future versions may explore concepts such as:
 
-Important notes could become stars.
-
-Major knowledge hubs could evolve into planets, galaxies, or massive cosmic structures.
+- notes behaving like particles,
+- important concepts becoming stars,
+- major knowledge hubs evolving into massive cosmic structures,
+- and graph relationships feeling more alive and organic.
 
 The graph should not only display information.
 
