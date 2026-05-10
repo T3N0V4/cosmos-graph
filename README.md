@@ -8,7 +8,7 @@ Transform the Obsidian Graph into a living cosmic visualization.
 
 ---
 
-**Cosmos Graph** is an experimental Obsidian plugin that transforms the Graph View into a dynamic cosmic environment filled with animated stars, particles, glowing connections, depth, parallax and reactive visual effects.
+**Cosmos Graph** is an experimental Obsidian plugin that transforms the Graph View into a dynamic cosmic environment filled with animated stars, particles, constellation-style connections, depth, parallax, and reactive visual effects.
 
 Instead of feeling like a static diagram, the graph becomes something atmospheric and alive.
 
@@ -16,15 +16,15 @@ Instead of feeling like a static diagram, the graph becomes something atmospheri
 
 ---
 
-# Preview
+## Preview
 
-![Cosmos Graph Preview](assets/cosmos-preview.gif)
+![Cosmos Graph Preview](assets/cosmos-graph-general-screen.png)
 
 ---
 
-# What is Cosmos Graph?
+## What Is Cosmos Graph?
 
-Cosmos Graph reimagines Obsidian’s Graph View as a living universe.
+Cosmos Graph reimagines Obsidian's Graph View as a living universe.
 
 The project started as a visual experiment, but evolved into a broader idea:
 
@@ -37,7 +37,7 @@ The goal is not only to improve aesthetics, but to explore a more expressive and
 
 ---
 
-# Why?
+## Why?
 
 The default Obsidian graph is functional, but visually static.
 
@@ -46,72 +46,56 @@ Cosmos Graph explores the idea of turning knowledge visualization into something
 - atmospheric,
 - reactive,
 - cinematic,
-- and emotionally expressive.
+- emotionally expressive.
 
 Instead of simply displaying connections, the graph becomes an interactive visual environment.
 
 ---
 
-# Features
+## Features
 
-## Current Features
-
-- Animated cosmic background
-- Far and near star layers
-- Particle system
-- Dynamic glowing connections
-- Mouse-based parallax depth
-- Shooting stars
-- Burst effects
-- Interactive movement response
-- Performance/debug HUD
-- Reset visual state button
-- Custom settings panel
-- Desktop-only support
+- Animated cosmic background.
+- Far and near star layers.
+- Ambient particle system.
+- Dynamic constellation-style connections.
+- Mouse-based parallax depth.
+- Mouse glow and repulsion effects.
+- Shooting stars.
+- Radial, directional, and gravity click bursts.
+- Interactive movement response.
+- Reset visual state button.
+- Custom settings panel.
+- Performance warnings for very high visual settings.
+- Desktop-only support.
 
 ---
 
-# Screenshots
+## Screenshots
 
-## Full Graph View
-
-<!-- PUT FULL GRAPH SCREENSHOT HERE -->
-<!-- Idea: entire graph visible with cosmic background -->
+### Full Graph View
 
 ![Full Graph View](assets/cosmos-graph-general-screen.png)
 
----
-
-## Close View
-
-<!-- PUT CLOSE-UP SCREENSHOT HERE -->
-<!-- Idea: zoom showing particles and glowing connections -->
+### Close View
 
 ![Close View](assets/close-view.png)
 
----
+### Settings Panel
 
-## Settings Panel
+![Settings Panel](assets/setting-panel.png)
 
-<!-- PUT SETTINGS PANEL SCREENSHOT HERE -->
-<!-- Idea: plugin settings sidebar visible -->
+## Installation
 
-![Settings Panel](assets/settings-panel.png)
+### From Obsidian Community Plugins
 
----
+Once approved in the Obsidian community plugin directory:
 
-## Performance HUD
+1. Open **Settings -> Community plugins**.
+2. Disable **Restricted mode** if needed.
+3. Search for **Cosmos Graph**.
+4. Install and enable the plugin.
 
-<!-- PUT PERFORMANCE HUD SCREENSHOT HERE -->
-<!-- Idea: FPS/debug table visible -->
-
-![Performance HUD](assets/performance-hud.png)
-
----
-
-# Installation
-
-## Manual installation
+### Manual Installation
 
 1. Download the latest release.
 2. Copy these files into your Obsidian vault:
@@ -129,23 +113,16 @@ styles.css
 ```
 
 3. Restart Obsidian.
-4. Open:
-
-```txt
-Settings → Community plugins
-```
-
+4. Open **Settings -> Community plugins**.
 5. Enable **Cosmos Graph**.
 
----
-
-## Development installation
+### Development Installation
 
 Clone the repository into your Obsidian plugins folder:
 
 ```bash
 cd path/to/your/vault/.obsidian/plugins
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git cosmos-graph
+git clone https://github.com/T3N0V4/cosmos-graph.git cosmos-graph
 cd cosmos-graph
 npm install
 npm run build
@@ -155,32 +132,33 @@ Then enable the plugin inside Obsidian.
 
 ---
 
-# Performance Notes
+## Performance Notes
 
 Cosmos Graph is currently in alpha and uses multiple animated canvas layers and real-time rendering systems.
 
 Performance may vary depending on:
 
-- particle count
-- connection density
-- background star density
-- glow intensity
-- graph size
-- screen resolution
-- device pixel ratio
-- GPU/browser performance
+- particle count,
+- connection density,
+- background star density,
+- graph size,
+- screen resolution,
+- device pixel ratio,
+- GPU/browser performance.
 
-If performance drops, try reducing or disabling:
+If performance drops, try reducing:
 
-- particle count
-- particle connections
-- background layers
-- glow effects
-- debug HUD
+- initial particles,
+- max particles,
+- connection distance,
+- max connections per particle,
+- background star counts.
+
+Cosmos Graph also shows performance warnings in settings when expensive values are pushed very high.
 
 ---
 
-# Current Limitations
+## Current Limitations
 
 Cosmos Graph is still experimental.
 
@@ -195,24 +173,24 @@ Known limitations:
 
 ---
 
-# Roadmap
+## Roadmap
 
 Planned ideas and future experiments:
 
-- Better integration with real Obsidian graph nodes
-- Visual hierarchy based on note relevance
-- Different cosmic entities based on importance
-- Massive node structures (stars, planets, galaxies)
-- Improved performance systems
-- Preset visual themes
-- Cinematic graph modes
-- Dynamic graph reactions
-- Better support for huge vaults
-- Cleaner internal graph architecture
+- Better integration with real Obsidian graph nodes.
+- Visual hierarchy based on note relevance.
+- Different cosmic entities based on importance.
+- Massive node structures such as stars, planets, and galaxies.
+- Improved performance systems.
+- Preset visual themes.
+- Cinematic graph modes.
+- Dynamic graph reactions.
+- Better support for huge vaults.
+- Cleaner internal graph architecture.
 
 ---
 
-# Vision
+## Vision
 
 The long-term idea behind Cosmos Graph is to transform the graph from a static utility into an expressive visual experience.
 
@@ -220,7 +198,7 @@ Small notes could feel like particles drifting through space.
 
 Important notes could become stars.
 
-Major knowledge hubs could evolve into planets, galaxies or massive cosmic structures.
+Major knowledge hubs could evolve into planets, galaxies, or massive cosmic structures.
 
 The graph should not only display information.
 
@@ -228,12 +206,24 @@ It should feel alive.
 
 ---
 
-# Author
+## Release Files
+
+GitHub releases should include:
+
+```txt
+main.js
+manifest.json
+styles.css
+```
+
+---
+
+## Author
 
 Created by **T3N0V4**.
 
 ---
 
-# License
+## License
 
-MIT License
+MIT License.
