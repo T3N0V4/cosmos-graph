@@ -18,7 +18,7 @@ Instead of feeling like a static diagram, the graph becomes something atmospheri
 
 ## Preview
 
-![Cosmos Graph Preview](assets/cosmos-preview.gif)
+![Cosmos Graph Preview](assets/cosmos-preview.png)
 
 ---
 
