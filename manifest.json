@@ -1,0 +1,9 @@
+{
+  "id": "cosmos-graph",
+  "name": "Cosmos Graph",
+  "version": "1.0.0-alpha",
+  "minAppVersion": "1.5.0",
+  "description": "Fondo cósmico animado para el grafo de Obsidian.",
+  "author": "T3N0V4",
+  "isDesktopOnly": true
+}
