@@ -237,4 +237,4 @@ MIT License.
 
 If you enjoy Cosmos Graph and want to support development:
 
-☕ https://cafecito.app/TU_USUARIO
+☕ https://cafecito.app/T3N0V4
