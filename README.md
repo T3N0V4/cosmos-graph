@@ -232,3 +232,9 @@ Created by **T3N0V4**.
 ## License
 
 MIT License.
+
+## Support
+
+If you enjoy Cosmos Graph and want to support development:
+
+☕ https://cafecito.app/TU_USUARIO
