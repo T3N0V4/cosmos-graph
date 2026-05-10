@@ -246,6 +246,25 @@
     font-size: 11px;
 }
 
+.cosmos-performance-warning {
+    display: none;
+    margin: 0 0 8px;
+    padding: 7px 9px;
+
+    border: 1px solid rgba(255, 190, 110, 0.35);
+    border-radius: 6px;
+
+    background: rgba(70, 42, 10, 0.42);
+    color: rgba(255, 225, 180, 0.92);
+
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.cosmos-performance-warning.is-visible {
+    display: block;
+}
+
 .cosmos-system-stats {
     position: absolute;
     left: 14px;

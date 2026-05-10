@@ -1,6 +1,6 @@
 {
   "name": "cosmos-graph",
-  "version": "alpha-1.0.0",
+  "version": "1.0.0",
   "description": "Cosmic animated background for Obsidian Graph View",
   "main": "main.js",
   "scripts": {

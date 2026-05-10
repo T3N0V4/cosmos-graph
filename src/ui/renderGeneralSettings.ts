@@ -36,6 +36,18 @@ export function renderGeneralSettings(
 
 const sectionEl = section.contentEl;
 
+    const performanceWarning =
+        createPerformanceWarning(sectionEl);
+
+    const updatePerformanceWarning = () => {
+        updateGeneralPerformanceWarning(
+            performanceWarning,
+            plugin
+        );
+    };
+
+    updatePerformanceWarning();
+
     new Setting(sectionEl)
         .setName("Particles")
         .setDesc("Enable or disable ambient particles.")
@@ -86,6 +98,7 @@ const sectionEl = section.contentEl;
                 .setDynamicTooltip()
                 .onChange(async value => {
                     plugin.settings.particleCount = value;
+                    updatePerformanceWarning();
                     await plugin.saveSettings();
                 })
         );
@@ -100,6 +113,7 @@ const sectionEl = section.contentEl;
                 .setDynamicTooltip()
                 .onChange(async value => {
                     plugin.settings.maxParticles = value;
+                    updatePerformanceWarning();
                     await plugin.saveSettings();
                 })
         );
@@ -157,9 +171,54 @@ const sectionEl = section.contentEl;
                         value as PerformanceMode
                     );
 
+                    updatePerformanceWarning();
                     await plugin.saveSettings();
                 })
         );
+}
+
+function createPerformanceWarning(
+    containerEl: HTMLElement
+) {
+    return containerEl.createDiv({
+        cls: "cosmos-performance-warning"
+    });
+}
+
+function updateGeneralPerformanceWarning(
+    warningEl: HTMLElement,
+    plugin: CosmosGraphPluginType
+) {
+    const warnings: string[] = [];
+
+    if (plugin.settings.particleCount >= 1500) {
+        warnings.push("Initial particles is very high.");
+    }
+
+    if (plugin.settings.maxParticles >= 2500) {
+        warnings.push("Max particles is very high.");
+    }
+
+    updateWarningElement(
+        warningEl,
+        warnings
+    );
+}
+
+function updateWarningElement(
+    warningEl: HTMLElement,
+    warnings: string[]
+) {
+    warningEl.setText(
+        warnings.length > 0
+            ? `Performance warning: ${warnings.join(" ")}`
+            : ""
+    );
+
+    warningEl.toggleClass(
+        "is-visible",
+        warnings.length > 0
+    );
 }
 
 function applyPerformanceModePreset(

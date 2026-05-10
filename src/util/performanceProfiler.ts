@@ -1,4 +1,4 @@
-export class PerformanceProfiler { // esto es para medir el rendimiento de diferentes partes del código y reportarlo periódicamente en la consola. No es un profiler tradicional, sino más bien una herramienta de medición personalizada.
+export class PerformanceProfiler {
     private values =
         new Map<string, number>();
 
@@ -12,13 +12,19 @@ export class PerformanceProfiler { // esto es para medir el rendimiento de difer
         performance.now();
 
     constructor(
-        private title = "Cosmos performance"
+        private title = "Cosmos performance",
+        private enabled = false
     ) {}
 
     measure(
         label: string,
         callback: () => void
     ) {
+        if (!this.enabled) {
+            callback();
+            return;
+        }
+
         const start =
             performance.now();
 
@@ -36,6 +42,10 @@ export class PerformanceProfiler { // esto es para medir el rendimiento de difer
         value: number,
         unit = "ms"
     ) {
+        if (!this.enabled) {
+            return;
+        }
+
         this.values.set(
             label,
             (this.values.get(label) ?? 0) + value
@@ -53,6 +63,10 @@ export class PerformanceProfiler { // esto es para medir el rendimiento de difer
     }
 
     reportEvery(ms: number) {
+        if (!this.enabled) {
+            return;
+        }
+
         const now =
             performance.now();
 

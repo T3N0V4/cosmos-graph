@@ -73,7 +73,7 @@ export class CosmosRenderer {
 
         Luego estos valores deberían venir desde settings.
     */
-    private debugHudEnabled = true;
+    private debugHudEnabled = false;
 
     private debugHudOptions: DebugHudOptions = {
         showPerformance: true,
@@ -303,7 +303,10 @@ export class CosmosRenderer {
         );
 
         this.ensureResetButton(graphView);
-        this.ensureSystemStatsPanel(graphView);
+
+        if (this.debugHudEnabled) {
+            this.ensureSystemStatsPanel(graphView);
+        }
 
         const attached =
             this.canvasLayer.attach(graphView);
@@ -986,6 +989,10 @@ this.updateFps(rawDelta);
     private ensureSystemStatsPanel(
         graphView: HTMLElement
     ) {
+        if (!this.debugHudEnabled) {
+            return;
+        }
+
         this.ensureSystemStatsToggle(
             graphView
         );
@@ -1094,6 +1101,10 @@ this.updateFps(rawDelta);
     private ensureSystemStatsToggle(
         graphView: HTMLElement
     ) {
+        if (!this.debugHudEnabled) {
+            return;
+        }
+
         if (this.statsToggleButton?.isConnected) {
             return;
         }

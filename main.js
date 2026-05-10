@@ -2596,15 +2596,19 @@ function drawBurstCooldownHud(ctx, mouse, clickEffectMode, cooldownProgress, rea
 
 // src/util/performanceProfiler.ts
 var PerformanceProfiler = class {
-  constructor(title = "Cosmos performance") {
+  constructor(title = "Cosmos performance", enabled = false) {
     this.title = title;
-    // esto es para medir el rendimiento de diferentes partes del código y reportarlo periódicamente en la consola. No es un profiler tradicional, sino más bien una herramienta de medición personalizada.
+    this.enabled = enabled;
     this.values = /* @__PURE__ */ new Map();
     this.counts = /* @__PURE__ */ new Map();
     this.units = /* @__PURE__ */ new Map();
     this.lastReport = performance.now();
   }
   measure(label, callback) {
+    if (!this.enabled) {
+      callback();
+      return;
+    }
     const start = performance.now();
     callback();
     this.record(
@@ -2614,6 +2618,9 @@ var PerformanceProfiler = class {
     );
   }
   record(label, value, unit = "ms") {
+    if (!this.enabled) {
+      return;
+    }
     this.values.set(
       label,
       (this.values.get(label) ?? 0) + value
@@ -2628,6 +2635,9 @@ var PerformanceProfiler = class {
     );
   }
   reportEvery(ms) {
+    if (!this.enabled) {
+      return;
+    }
     const now = performance.now();
     if (now - this.lastReport < ms) {
       return;
@@ -2679,7 +2689,7 @@ var CosmosRenderer = class {
     
             Luego estos valores deberían venir desde settings.
         */
-    this.debugHudEnabled = true;
+    this.debugHudEnabled = false;
     this.debugHudOptions = {
       showPerformance: true,
       showEntities: true,
@@ -2904,7 +2914,9 @@ var CosmosRenderer = class {
       this.plugin.settings
     );
     this.ensureResetButton(graphView);
-    this.ensureSystemStatsPanel(graphView);
+    if (this.debugHudEnabled) {
+      this.ensureSystemStatsPanel(graphView);
+    }
     const attached = this.canvasLayer.attach(graphView);
     if (!attached)
       return;
@@ -3323,6 +3335,9 @@ var CosmosRenderer = class {
     );
   }
   ensureSystemStatsPanel(graphView) {
+    if (!this.debugHudEnabled) {
+      return;
+    }
     this.ensureSystemStatsToggle(
       graphView
     );
@@ -3391,6 +3406,9 @@ var CosmosRenderer = class {
     this.statsToggleButton?.hide();
   }
   ensureSystemStatsToggle(graphView) {
+    if (!this.debugHudEnabled) {
+      return;
+    }
     if (this.statsToggleButton?.isConnected) {
       return;
     }
@@ -3726,6 +3744,14 @@ function renderGeneralSettings(containerEl, plugin) {
     ]
   );
   const sectionEl = section.contentEl;
+  const performanceWarning = createPerformanceWarning(sectionEl);
+  const updatePerformanceWarning = () => {
+    updateGeneralPerformanceWarning(
+      performanceWarning,
+      plugin
+    );
+  };
+  updatePerformanceWarning();
   new import_obsidian2.Setting(sectionEl).setName("Particles").setDesc("Enable or disable ambient particles.").addToggle(
     (toggle) => toggle.setValue(plugin.settings.enableParticles).onChange(async (value) => {
       plugin.settings.enableParticles = value;
@@ -3747,12 +3773,14 @@ function renderGeneralSettings(containerEl, plugin) {
   new import_obsidian2.Setting(sectionEl).setName("Initial particles").setDesc("Amount of particles created when the graph opens.").addSlider(
     (slider) => slider.setLimits(50, 1e4, 10).setValue(plugin.settings.particleCount).setDynamicTooltip().onChange(async (value) => {
       plugin.settings.particleCount = value;
+      updatePerformanceWarning();
       await plugin.saveSettings();
     })
   );
   new import_obsidian2.Setting(sectionEl).setName("Max particles").setDesc("Maximum amount of particles allowed.").addSlider(
     (slider) => slider.setLimits(50, 1e4, 50).setValue(plugin.settings.maxParticles).setDynamicTooltip().onChange(async (value) => {
       plugin.settings.maxParticles = value;
+      updatePerformanceWarning();
       await plugin.saveSettings();
     })
   );
@@ -3780,8 +3808,36 @@ function renderGeneralSettings(containerEl, plugin) {
         plugin,
         value
       );
+      updatePerformanceWarning();
       await plugin.saveSettings();
     })
+  );
+}
+function createPerformanceWarning(containerEl) {
+  return containerEl.createDiv({
+    cls: "cosmos-performance-warning"
+  });
+}
+function updateGeneralPerformanceWarning(warningEl, plugin) {
+  const warnings = [];
+  if (plugin.settings.particleCount >= 1500) {
+    warnings.push("Initial particles is very high.");
+  }
+  if (plugin.settings.maxParticles >= 2500) {
+    warnings.push("Max particles is very high.");
+  }
+  updateWarningElement(
+    warningEl,
+    warnings
+  );
+}
+function updateWarningElement(warningEl, warnings) {
+  warningEl.setText(
+    warnings.length > 0 ? `Performance warning: ${warnings.join(" ")}` : ""
+  );
+  warningEl.toggleClass(
+    "is-visible",
+    warnings.length > 0
   );
 }
 function applyPerformanceModePreset(plugin, mode) {
@@ -3944,9 +4000,18 @@ function renderConnectionSettings(containerEl, plugin) {
       "maxConnectionsPerParticle"
     ]
   );
+  const performanceWarning = createPerformanceWarning2(section.contentEl);
+  const updatePerformanceWarning = () => {
+    updateConnectionPerformanceWarning(
+      performanceWarning,
+      plugin
+    );
+  };
+  updatePerformanceWarning();
   new import_obsidian4.Setting(section.contentEl).setName("Max connections per particle").setDesc("Maximum amount of constellation lines each particle can create.").addSlider(
     (slider) => slider.setLimits(1, 12, 1).setValue(plugin.settings.maxConnectionsPerParticle).setDynamicTooltip().onChange(async (value) => {
       plugin.settings.maxConnectionsPerParticle = value;
+      updatePerformanceWarning();
       await plugin.saveSettings();
       plugin.renderer?.reloadSettings();
     })
@@ -3962,6 +4027,8 @@ function renderConnectionSettings(containerEl, plugin) {
   );
   new import_obsidian4.Setting(section.contentEl).setName("Connection distance").setDesc("Maximum distance between stars to create connections.").addSlider(
     (slider) => slider.setLimits(20, 400, 5).setValue(plugin.settings.connectionDistance).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.connectionDistance = value;
+      updatePerformanceWarning();
       await updateSetting(
         plugin,
         "connectionDistance",
@@ -3995,6 +4062,33 @@ function renderConnectionSettings(containerEl, plugin) {
         hexToRgb(value)
       );
     })
+  );
+}
+function createPerformanceWarning2(containerEl) {
+  return containerEl.createDiv({
+    cls: "cosmos-performance-warning"
+  });
+}
+function updateConnectionPerformanceWarning(warningEl, plugin) {
+  const warnings = [];
+  if (plugin.settings.connectionDistance >= 280) {
+    warnings.push("Connection distance is very high.");
+  }
+  if (plugin.settings.maxConnectionsPerParticle >= 8) {
+    warnings.push("Max connections per particle is very high.");
+  }
+  updateWarningElement2(
+    warningEl,
+    warnings
+  );
+}
+function updateWarningElement2(warningEl, warnings) {
+  warningEl.setText(
+    warnings.length > 0 ? `Performance warning: ${warnings.join(" ")}` : ""
+  );
+  warningEl.toggleClass(
+    "is-visible",
+    warnings.length > 0
   );
 }
 function rgbToHex(rgb) {

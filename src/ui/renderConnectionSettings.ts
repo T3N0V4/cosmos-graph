@@ -30,6 +30,18 @@ export function renderConnectionSettings(
         ]
     );
 
+    const performanceWarning =
+        createPerformanceWarning(section.contentEl);
+
+    const updatePerformanceWarning = () => {
+        updateConnectionPerformanceWarning(
+            performanceWarning,
+            plugin
+        );
+    };
+
+    updatePerformanceWarning();
+
     new Setting(section.contentEl)
     .setName("Max connections per particle")
     .setDesc("Maximum amount of constellation lines each particle can create.")
@@ -40,6 +52,7 @@ export function renderConnectionSettings(
             .setDynamicTooltip()
             .onChange(async value => {
                 plugin.settings.maxConnectionsPerParticle = value;
+                updatePerformanceWarning();
                 await plugin.saveSettings();
                 plugin.renderer?.reloadSettings();
             })
@@ -69,6 +82,8 @@ export function renderConnectionSettings(
                 .setValue(plugin.settings.connectionDistance)
                 .setDynamicTooltip()
                 .onChange(async value => {
+                    plugin.settings.connectionDistance = value;
+                    updatePerformanceWarning();
                     await updateSetting(
                         plugin,
                         "connectionDistance",
@@ -125,6 +140,50 @@ export function renderConnectionSettings(
                     );
                 })
         );
+}
+
+function createPerformanceWarning(
+    containerEl: HTMLElement
+) {
+    return containerEl.createDiv({
+        cls: "cosmos-performance-warning"
+    });
+}
+
+function updateConnectionPerformanceWarning(
+    warningEl: HTMLElement,
+    plugin: CosmosGraphPluginType
+) {
+    const warnings: string[] = [];
+
+    if (plugin.settings.connectionDistance >= 280) {
+        warnings.push("Connection distance is very high.");
+    }
+
+    if (plugin.settings.maxConnectionsPerParticle >= 8) {
+        warnings.push("Max connections per particle is very high.");
+    }
+
+    updateWarningElement(
+        warningEl,
+        warnings
+    );
+}
+
+function updateWarningElement(
+    warningEl: HTMLElement,
+    warnings: string[]
+) {
+    warningEl.setText(
+        warnings.length > 0
+            ? `Performance warning: ${warnings.join(" ")}`
+            : ""
+    );
+
+    warningEl.toggleClass(
+        "is-visible",
+        warnings.length > 0
+    );
 }
 
 function rgbToHex(rgb: string) {
