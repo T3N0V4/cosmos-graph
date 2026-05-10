@@ -182,6 +182,8 @@ export class CosmosRenderer {
             this.plugin.settings
         );
 
+        this.particleSystem.invalidateConnections();
+
         if (didMaxParticlesChange) {
             this.particleSystem.limitParticles(
                 this.plugin.settings.maxParticles
@@ -750,6 +752,8 @@ this.updateFps(rawDelta);
                 );
 
                 this.backgroundRenderer.update(
+                    this.plugin.settings
+                        .enableBackground,
                     this.plugin.settings
                         .enableParallax
                 );

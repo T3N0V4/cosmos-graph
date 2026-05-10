@@ -50,10 +50,10 @@ export class BackgroundRenderer {
     private settings: CosmosSettings | null = null;
 
     private lastFarDrawTime = 0;
-    private farFrameInterval = 1000 / 30;
+    private farFrameInterval = 1000 / 12;
 
     private lastNearDrawTime = 0;
-    private nearFrameInterval = 1000 / 45;
+    private nearFrameInterval = 1000 / 20;
 
     setContainer(
         container: HTMLElement,
@@ -106,6 +106,7 @@ export class BackgroundRenderer {
     }
 
     update(
+        enabled: boolean,
         enableParallax: boolean
     ) {
         if (
@@ -114,6 +115,12 @@ export class BackgroundRenderer {
             !this.farCtx ||
             !this.nearCtx
         ) {
+            return;
+        }
+
+        this.setVisible(enabled);
+
+        if (!enabled) {
             return;
         }
 
@@ -156,6 +163,15 @@ export class BackgroundRenderer {
         }
 
         this.draw();
+    }
+
+    setVisible(enabled: boolean) {
+        if (!this.root) {
+            return;
+        }
+
+        this.root.style.display =
+            enabled ? "" : "none";
     }
 
     setParallax(
@@ -876,8 +892,6 @@ export class BackgroundRenderer {
         color: string,
         drawSoftGlow: boolean
     ) {
-        ctx.save();
-
         ctx.globalAlpha =
             opacity;
 
@@ -912,8 +926,6 @@ export class BackgroundRenderer {
 
             ctx.fill();
         }
-
-        ctx.restore();
     }
 
     private destroyCanvasOnly() {

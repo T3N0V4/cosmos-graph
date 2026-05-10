@@ -141,6 +141,10 @@ export class ParticleSystem {
 
     applyVisualSettings(_settings: CosmosSettings) {}
 
+    invalidateConnections() {
+        this.invalidateConnectionCache();
+    }
+
     addAmbientParticle(particle: GalaxyParticle) {
         this.particles.push({
             ...particle,
@@ -897,6 +901,7 @@ export class ParticleSystem {
     ) {
         const mouseGlowEnabled =
             settings.enableMouseGlow &&
+            mouse.isInside === true &&
             this.mouseInfluence > 0.01 &&
             mouse.x >= 0 &&
             mouse.y >= 0;
@@ -918,6 +923,21 @@ export class ParticleSystem {
                 1
             );
 
+        const mouseGlowRadius =
+            settings.mouseGlowRadius;
+
+        const mouseGlowMinX =
+            mouse.x - mouseGlowRadius;
+
+        const mouseGlowMaxX =
+            mouse.x + mouseGlowRadius;
+
+        const mouseGlowMinY =
+            mouse.y - mouseGlowRadius;
+
+        const mouseGlowMaxY =
+            mouse.y + mouseGlowRadius;
+
         for (const particle of this.particles) {
             const renderPosition =
                 this.getRenderPosition(
@@ -936,7 +956,14 @@ export class ParticleSystem {
                 ? 0.12 + depth * 0.18
                 : 0.32 + depth * 0.68;
 
-            const mouseGlow = mouseGlowEnabled
+            const canReceiveMouseGlow =
+                mouseGlowEnabled &&
+                renderPosition.x >= mouseGlowMinX &&
+                renderPosition.x <= mouseGlowMaxX &&
+                renderPosition.y >= mouseGlowMinY &&
+                renderPosition.y <= mouseGlowMaxY;
+
+            const mouseGlow = canReceiveMouseGlow
                 ? this.getMouseGlow(
                     particle,
                     mouse,
@@ -1158,6 +1185,7 @@ export class ParticleSystem {
 
         const mouseGlowEnabled =
             settings.enableMouseGlow &&
+            mouse.isInside === true &&
             this.mouseInfluence > 0.01 &&
             mouse.x >= 0 &&
             mouse.y >= 0;
@@ -1203,7 +1231,10 @@ export class ParticleSystem {
         const shouldRebuildCache =
             this.cachedConnectionPairs.length === 0 ||
             now - this.lastConnectionCacheTime >=
-                this.connectionCacheIntervalMs;
+                this.getConnectionCacheInterval(
+                    renderPoints.length,
+                    connectionDistance
+                );
 
         if (shouldRebuildCache) {
             this.rebuildConnectionCache(
@@ -1545,6 +1576,38 @@ const newPairs: ConnectionPair[] = [];
 
         this.debugMetrics.connectionScanMs =
             performance.now() - scanStart;
+    }
+
+    private getConnectionCacheInterval(
+        renderPointCount: number,
+        connectionDistance: number
+    ) {
+        if (
+            renderPointCount < 800 &&
+            connectionDistance < 220
+        ) {
+            return this.connectionCacheIntervalMs;
+        }
+
+        const particleLoad =
+            Math.max(
+                1,
+                renderPointCount / 1000
+            );
+
+        const distanceLoad =
+            Math.max(
+                1,
+                connectionDistance / 160
+            );
+
+        return this.clamp(
+            this.connectionCacheIntervalMs *
+                particleLoad *
+                distanceLoad,
+            this.connectionCacheIntervalMs,
+            260
+        );
     }
 
     private getConnectionCandidateScore(

@@ -154,6 +154,9 @@ var ParticleSystem = class {
   }
   applyVisualSettings(_settings) {
   }
+  invalidateConnections() {
+    this.invalidateConnectionCache();
+  }
   addAmbientParticle(particle) {
     this.particles.push({
       ...particle,
@@ -551,7 +554,7 @@ var ParticleSystem = class {
     };
   }
   drawParticles(ctx, time, mouse, settings, parallax) {
-    const mouseGlowEnabled = settings.enableMouseGlow && this.mouseInfluence > 0.01 && mouse.x >= 0 && mouse.y >= 0;
+    const mouseGlowEnabled = settings.enableMouseGlow && mouse.isInside === true && this.mouseInfluence > 0.01 && mouse.x >= 0 && mouse.y >= 0;
     const colorProfile = this.getParticleColorProfile(settings);
     const particleBrightness = this.clamp(
       settings.particleBrightness,
@@ -563,6 +566,11 @@ var ParticleSystem = class {
       0,
       1
     );
+    const mouseGlowRadius = settings.mouseGlowRadius;
+    const mouseGlowMinX = mouse.x - mouseGlowRadius;
+    const mouseGlowMaxX = mouse.x + mouseGlowRadius;
+    const mouseGlowMinY = mouse.y - mouseGlowRadius;
+    const mouseGlowMaxY = mouse.y + mouseGlowRadius;
     for (const particle of this.particles) {
       const renderPosition = this.getRenderPosition(
         particle,
@@ -572,7 +580,8 @@ var ParticleSystem = class {
       const isDeep = particle.kind === "deep";
       const depthSize = isDeep ? 0.22 + depth * 0.18 : 0.45 + depth * 0.75;
       const depthAlpha = isDeep ? 0.12 + depth * 0.18 : 0.32 + depth * 0.68;
-      const mouseGlow = mouseGlowEnabled ? this.getMouseGlow(
+      const canReceiveMouseGlow = mouseGlowEnabled && renderPosition.x >= mouseGlowMinX && renderPosition.x <= mouseGlowMaxX && renderPosition.y >= mouseGlowMinY && renderPosition.y <= mouseGlowMaxY;
+      const mouseGlow = canReceiveMouseGlow ? this.getMouseGlow(
         particle,
         mouse,
         settings,
@@ -702,7 +711,7 @@ var ParticleSystem = class {
       return;
     }
     const now = performance.now();
-    const mouseGlowEnabled = settings.enableMouseGlow && this.mouseInfluence > 0.01 && mouse.x >= 0 && mouse.y >= 0;
+    const mouseGlowEnabled = settings.enableMouseGlow && mouse.isInside === true && this.mouseInfluence > 0.01 && mouse.x >= 0 && mouse.y >= 0;
     const mouseGlowRadiusSquared = settings.mouseGlowRadius * settings.mouseGlowRadius;
     const renderPoints = [];
     const renderPointByIndex = [];
@@ -726,7 +735,10 @@ var ParticleSystem = class {
       renderPointByIndex[i] = point;
     }
     this.debugMetrics.connectionRenderPoints = renderPoints.length;
-    const shouldRebuildCache = this.cachedConnectionPairs.length === 0 || now - this.lastConnectionCacheTime >= this.connectionCacheIntervalMs;
+    const shouldRebuildCache = this.cachedConnectionPairs.length === 0 || now - this.lastConnectionCacheTime >= this.getConnectionCacheInterval(
+      renderPoints.length,
+      connectionDistance
+    );
     if (shouldRebuildCache) {
       this.rebuildConnectionCache(
         renderPoints,
@@ -893,6 +905,24 @@ var ParticleSystem = class {
     }
     this.cachedConnectionPairs = newPairs;
     this.debugMetrics.connectionScanMs = performance.now() - scanStart;
+  }
+  getConnectionCacheInterval(renderPointCount, connectionDistance) {
+    if (renderPointCount < 800 && connectionDistance < 220) {
+      return this.connectionCacheIntervalMs;
+    }
+    const particleLoad = Math.max(
+      1,
+      renderPointCount / 1e3
+    );
+    const distanceLoad = Math.max(
+      1,
+      connectionDistance / 160
+    );
+    return this.clamp(
+      this.connectionCacheIntervalMs * particleLoad * distanceLoad,
+      this.connectionCacheIntervalMs,
+      260
+    );
   }
   getConnectionCandidateScore(a, b, connectionDistance, mouse, settings, mouseGlowEnabled, mouseGlowRadiusSquared) {
     const depthDifference = Math.abs(a.depth - b.depth);
@@ -1533,9 +1563,9 @@ var BackgroundRenderer = class {
     this.farLayerDirty = true;
     this.settings = null;
     this.lastFarDrawTime = 0;
-    this.farFrameInterval = 1e3 / 30;
+    this.farFrameInterval = 1e3 / 12;
     this.lastNearDrawTime = 0;
-    this.nearFrameInterval = 1e3 / 45;
+    this.nearFrameInterval = 1e3 / 20;
   }
   setContainer(container, settings) {
     const isNewContainer = this.graphView !== container;
@@ -1561,8 +1591,12 @@ var BackgroundRenderer = class {
     this.resize();
     this.farLayerDirty = true;
   }
-  update(enableParallax) {
+  update(enabled, enableParallax) {
     if (!this.graphView || !this.graphView.isConnected || !this.farCtx || !this.nearCtx) {
+      return;
+    }
+    this.setVisible(enabled);
+    if (!enabled) {
       return;
     }
     const rect = this.graphView.getBoundingClientRect();
@@ -1594,6 +1628,12 @@ var BackgroundRenderer = class {
       );
     }
     this.draw();
+  }
+  setVisible(enabled) {
+    if (!this.root) {
+      return;
+    }
+    this.root.style.display = enabled ? "" : "none";
   }
   setParallax(x, y) {
     this.targetParallaxX = clamp(
@@ -1953,7 +1993,6 @@ var BackgroundRenderer = class {
     return `hsl(${hue}, 85%, 86%)`;
   }
   drawStar(ctx, x, y, size, opacity, color, drawSoftGlow) {
-    ctx.save();
     ctx.globalAlpha = opacity;
     ctx.fillStyle = color;
     ctx.beginPath();
@@ -1977,7 +2016,6 @@ var BackgroundRenderer = class {
       );
       ctx.fill();
     }
-    ctx.restore();
   }
   destroyCanvasOnly() {
     this.farCanvas?.remove();
@@ -2845,6 +2883,7 @@ var CosmosRenderer = class {
     this.backgroundRenderer.applySettings(
       this.plugin.settings
     );
+    this.particleSystem.invalidateConnections();
     if (didMaxParticlesChange) {
       this.particleSystem.limitParticles(
         this.plugin.settings.maxParticles
@@ -3148,6 +3187,7 @@ var CosmosRenderer = class {
           backgroundParallax.y
         );
         this.backgroundRenderer.update(
+          this.plugin.settings.enableBackground,
           this.plugin.settings.enableParallax
         );
       }
@@ -4013,7 +4053,6 @@ function renderConnectionSettings(containerEl, plugin) {
       plugin.settings.maxConnectionsPerParticle = value;
       updatePerformanceWarning();
       await plugin.saveSettings();
-      plugin.renderer?.reloadSettings();
     })
   );
   new import_obsidian4.Setting(section.contentEl).setName("Enable connections").setDesc("Enable or disable constellation lines.").addToggle(

@@ -54,7 +54,6 @@ export function renderConnectionSettings(
                 plugin.settings.maxConnectionsPerParticle = value;
                 updatePerformanceWarning();
                 await plugin.saveSettings();
-                plugin.renderer?.reloadSettings();
             })
     );
 
