@@ -1,4 +1,9 @@
 export interface UniverseSettings {
+    particleCount: number;
+    maxParticles: number;
+
+    enableAutoSpawn: boolean;
+    autoSpawnIntervalMs: number;
     autoSpawnAmount: number;
 
     initialCleanRadiusRatio: number;
@@ -10,15 +15,15 @@ export interface UniverseSettings {
     starMaxSize: number;
     starHueMin: number;
     starHueMax: number;
-
-    particleColor: string;
     baseSpeed: number;
-
-    particleGlow: number;
-    particleBrightness: number;
 }
 
 export const UNIVERSE_DEFAULTS: UniverseSettings = {
+    particleCount: 220,
+    maxParticles: 320,
+
+    enableAutoSpawn: true,
+    autoSpawnIntervalMs: 1000,
     autoSpawnAmount: 1,
 
     initialCleanRadiusRatio: 0.28,
@@ -30,10 +35,5 @@ export const UNIVERSE_DEFAULTS: UniverseSettings = {
     starMaxSize: 1.45,
     starHueMin: 200,
     starHueMax: 260,
-
-    particleColor: "#7db7ff",
-    baseSpeed: 0.22,
-
-    particleGlow: 0.04,
-    particleBrightness: 1
+    baseSpeed: 0.22
 };

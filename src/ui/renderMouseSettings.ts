@@ -1,7 +1,5 @@
 import { Setting } from "obsidian";
-import type { CosmosGraphPluginType } from "../types/cosmosTypes";
-import { updateSetting } from "../util/updateSetting";
-import { addSectionReset } from "./addSectionReset";
+import type { CosmosGraphPluginType } from "../settings/cosmosTypes";
 import { createSettingSection } from "./createSettingSection";
 
 export function renderMouseSettings(
@@ -11,157 +9,130 @@ export function renderMouseSettings(
     const glowSection = createSettingSection(
         containerEl,
         "Mouse Glow",
-        {
-            description:
-                "Control the light effect around the mouse."
-        }
+        "Control how stars and connections light up near the mouse."
     );
 
-    addSectionReset(
-        glowSection,
-        plugin,
-        [
-            "enableMouseGlow",
-            "mouseGlowRadius",
-            "mouseGlowConnectionOpacity",
-            "mouseGlowLineWidth",
-            "mouseGlowParticleAlpha",
-            "mouseGlowParticleSize"
-        ]
-    );
-
-    new Setting(glowSection.contentEl)
-        .setName("Enable")
-        .setDesc("Enable glow near the mouse.")
+    new Setting(glowSection)
+        .setName("Enable mouse glow")
+        .setDesc("Enable constellation glow near the mouse.")
         .addToggle(toggle =>
             toggle
                 .setValue(plugin.settings.enableMouseGlow)
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "enableMouseGlow",
-                        value
-                    );
+                    plugin.settings.enableMouseGlow = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(glowSection.contentEl)
-        .setName("Size")
-        .setDesc("How far the glow reaches.")
+    new Setting(glowSection)
+        .setName("Mouse glow radius")
+        .setDesc("Radius where constellations light up near the mouse.")
         .addSlider(slider =>
             slider
                 .setLimits(50, 600, 10)
                 .setValue(plugin.settings.mouseGlowRadius)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "mouseGlowRadius",
-                        value
-                    );
+                    plugin.settings.mouseGlowRadius = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(glowSection.contentEl)
-        .setName("Connection Glow")
-        .setDesc("How much nearby connections light up.")
+    new Setting(glowSection)
+        .setName("Mouse connection glow")
+        .setDesc("How much mouse proximity increases connection opacity.")
         .addSlider(slider =>
             slider
                 .setLimits(0, 1, 0.01)
                 .setValue(plugin.settings.mouseGlowConnectionOpacity)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "mouseGlowConnectionOpacity",
-                        value
-                    );
+                    plugin.settings.mouseGlowConnectionOpacity = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(glowSection.contentEl)
-        .setName("Particle Glow")
-        .setDesc("How much nearby particles light up.")
+    new Setting(glowSection)
+        .setName("Mouse line width boost")
+        .setDesc("How much mouse proximity thickens connection lines.")
+        .addSlider(slider =>
+            slider
+                .setLimits(0, 3, 0.05)
+                .setValue(plugin.settings.mouseGlowLineWidth)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.mouseGlowLineWidth = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
+
+    new Setting(glowSection)
+        .setName("Mouse particle brightness")
+        .setDesc("How much nearby stars brighten around the mouse.")
         .addSlider(slider =>
             slider
                 .setLimits(0, 1, 0.01)
                 .setValue(plugin.settings.mouseGlowParticleAlpha)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "mouseGlowParticleAlpha",
-                        value
-                    );
+                    plugin.settings.mouseGlowParticleAlpha = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(glowSection.contentEl)
-        .setName("Particle Size")
-        .setDesc("How much nearby particles grow.")
+    new Setting(glowSection)
+        .setName("Mouse particle size boost")
+        .setDesc("How much nearby stars grow around the mouse.")
         .addSlider(slider =>
             slider
                 .setLimits(0, 3, 0.05)
                 .setValue(plugin.settings.mouseGlowParticleSize)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "mouseGlowParticleSize",
-                        value
-                    );
+                    plugin.settings.mouseGlowParticleSize = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
     const fieldSection = createSettingSection(
         containerEl,
-        "Mouse Force",
-        {
-            description:
-                "Control how the mouse pushes particles away."
-        }
+        "Mouse Field",
+        "Control the physical repulsion effect around the mouse."
     );
 
-    addSectionReset(
-        fieldSection,
-        plugin,
-        [
-            "mouseFieldRadius",
-            "mouseRepulseStrength"
-        ]
-    );
-
-    new Setting(fieldSection.contentEl)
-        .setName("Range")
-        .setDesc("How far the mouse force reaches.")
+    new Setting(fieldSection)
+        .setName("Mouse field radius")
+        .setDesc("Radius of particle repulsion around the mouse.")
         .addSlider(slider =>
             slider
                 .setLimits(20, 400, 5)
                 .setValue(plugin.settings.mouseFieldRadius)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "mouseFieldRadius",
-                        value
-                    );
+                    plugin.settings.mouseFieldRadius = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(fieldSection.contentEl)
-        .setName("Strength")
-        .setDesc("How strongly the mouse pushes particles.")
+    new Setting(fieldSection)
+        .setName("Mouse repulse strength")
+        .setDesc("Strength of mouse particle repulsion.")
         .addSlider(slider =>
             slider
                 .setLimits(0, 500, 10)
                 .setValue(plugin.settings.mouseRepulseStrength)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "mouseRepulseStrength",
-                        value
-                    );
+                    plugin.settings.mouseRepulseStrength = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 }

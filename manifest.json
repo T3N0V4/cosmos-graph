@@ -1,9 +1,9 @@
 {
   "id": "cosmos-graph",
   "name": "Cosmos Graph",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "Adds an animated cosmic background and particle effects to Obsidian Graph View.",
+  "description": "Fondo cósmico animado para el grafo de Obsidian.",
   "author": "T3N0V4",
   "isDesktopOnly": true
 }

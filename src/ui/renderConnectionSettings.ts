@@ -1,7 +1,5 @@
 import { Setting } from "obsidian";
-import type { CosmosGraphPluginType } from "../types/cosmosTypes";
-import { updateSetting } from "../util/updateSetting";
-import { addSectionReset } from "./addSectionReset";
+import type { CosmosGraphPluginType } from "../settings/cosmosTypes";
 import { createSettingSection } from "./createSettingSection";
 
 export function renderConnectionSettings(
@@ -10,69 +8,24 @@ export function renderConnectionSettings(
 ) {
     const section = createSettingSection(
         containerEl,
-        "Constellations",
-        {
-            description:
-                "Control constellation lines, distance, thickness, opacity and color."
-        }
+        "Connections",
+        "Control constellation lines, distance, thickness, opacity and color."
     );
 
-    addSectionReset(
-        section,
-        plugin,
-        [
-            "enableConnections",
-            "connectionDistance",
-            "connectionLineWidth",
-            "connectionColor",
-            "connectionBaseOpacity",
-            "maxConnectionsPerParticle"
-        ]
-    );
-
-    const performanceWarning =
-        createPerformanceWarning(section.contentEl);
-
-    const updatePerformanceWarning = () => {
-        updateConnectionPerformanceWarning(
-            performanceWarning,
-            plugin
-        );
-    };
-
-    updatePerformanceWarning();
-
-    new Setting(section.contentEl)
-    .setName("Max connections per particle")
-    .setDesc("Maximum amount of constellation lines each particle can create.")
-    .addSlider(slider =>
-        slider
-            .setLimits(1, 12, 1)
-            .setValue(plugin.settings.maxConnectionsPerParticle)
-            .setDynamicTooltip()
-            .onChange(async value => {
-                plugin.settings.maxConnectionsPerParticle = value;
-                updatePerformanceWarning();
-                await plugin.saveSettings();
-            })
-    );
-
-    new Setting(section.contentEl)
+    new Setting(section)
         .setName("Enable connections")
         .setDesc("Enable or disable constellation lines.")
         .addToggle(toggle =>
             toggle
                 .setValue(plugin.settings.enableConnections)
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "enableConnections",
-                        value
-                    );
+                    plugin.settings.enableConnections = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(section.contentEl)
+    new Setting(section)
         .setName("Connection distance")
         .setDesc("Maximum distance between stars to create connections.")
         .addSlider(slider =>
@@ -82,16 +35,12 @@ export function renderConnectionSettings(
                 .setDynamicTooltip()
                 .onChange(async value => {
                     plugin.settings.connectionDistance = value;
-                    updatePerformanceWarning();
-                    await updateSetting(
-                        plugin,
-                        "connectionDistance",
-                        value
-                    );
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(section.contentEl)
+    new Setting(section)
         .setName("Connection line width")
         .setDesc("Thickness of constellation lines.")
         .addSlider(slider =>
@@ -100,15 +49,13 @@ export function renderConnectionSettings(
                 .setValue(plugin.settings.connectionLineWidth)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "connectionLineWidth",
-                        value
-                    );
+                    plugin.settings.connectionLineWidth = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(section.contentEl)
+    new Setting(section)
         .setName("Connection opacity")
         .setDesc("Base opacity of constellation lines.")
         .addSlider(slider =>
@@ -117,72 +64,24 @@ export function renderConnectionSettings(
                 .setValue(plugin.settings.connectionBaseOpacity)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "connectionBaseOpacity",
-                        value
-                    );
+                    plugin.settings.connectionBaseOpacity = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(section.contentEl)
+    new Setting(section)
         .setName("Connection color")
         .setDesc("Pick the color used for constellation lines.")
         .addColorPicker(color =>
             color
                 .setValue(rgbToHex(plugin.settings.connectionColor))
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "connectionColor",
-                        hexToRgb(value)
-                    );
+                    plugin.settings.connectionColor = hexToRgb(value);
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
-}
-
-function createPerformanceWarning(
-    containerEl: HTMLElement
-) {
-    return containerEl.createDiv({
-        cls: "cosmos-performance-warning"
-    });
-}
-
-function updateConnectionPerformanceWarning(
-    warningEl: HTMLElement,
-    plugin: CosmosGraphPluginType
-) {
-    const warnings: string[] = [];
-
-    if (plugin.settings.connectionDistance >= 280) {
-        warnings.push("Connection distance is very high.");
-    }
-
-    if (plugin.settings.maxConnectionsPerParticle >= 8) {
-        warnings.push("Max connections per particle is very high.");
-    }
-
-    updateWarningElement(
-        warningEl,
-        warnings
-    );
-}
-
-function updateWarningElement(
-    warningEl: HTMLElement,
-    warnings: string[]
-) {
-    warningEl.setText(
-        warnings.length > 0
-            ? `Performance warning: ${warnings.join(" ")}`
-            : ""
-    );
-
-    warningEl.toggleClass(
-        "is-visible",
-        warnings.length > 0
-    );
 }
 
 function rgbToHex(rgb: string) {

@@ -1,111 +1,32 @@
 import CosmosGraphPlugin from "../main";
-import type { CosmosSettings } from "../settings/settings";
 
-import { ParallaxController } from "src/Controller/parallaxController";
 import { ParticleSystem } from "./particleSystem";
+import { ShootingStars } from "./shootingStars";
+import { InteractionEffects } from "./interactionEffects";
+import { BurstSystem } from "./burstSystem";
 import { CosmicObjects } from "./cosmicObjects";
 import { BackgroundRenderer } from "./backgroundRenderer";
-import { CanvasLayer } from "./canvasLayer";
-import { ShootingStars } from "../effects/shootingStars";
-import { InteractionEffects } from "src/effects/interactionEffects";
-import { BurstSystem } from "../effects/burstSystem";
-import { InteractionManager } from "src/interaction/InteractionManager";
-import { drawBurstCooldownHud } from "./burstCooldownHud";
-import { PerformanceProfiler } from "src/util/performanceProfiler";
-
-import {
-    DebugHudMetrics,
-    DebugHudOptions
-} from "./debugHud";
-
-const RESET_BUTTON_CLASS =
-    "cosmos-reset-stars-button";
-
-const SYSTEM_STATS_CLASS =
-    "cosmos-system-stats";
-
-const SYSTEM_STATS_TOGGLE_CLASS =
-    "cosmos-system-stats-toggle";
-
-type ParticleSettingsSnapshot = Pick<
-    CosmosSettings,
-    | "maxParticles"
-    | "starMinSize"
-    | "starMaxSize"
-    | "starHueMin"
-    | "starHueMax"
-    | "particleColor"
-    | "baseSpeed"
->;
 
 export class CosmosRenderer {
-    private canvasLayer =
-        new CanvasLayer();
+    private canvas: HTMLCanvasElement | null = null;
+    private ctx: CanvasRenderingContext2D | null = null;
 
     private graphView: HTMLElement | null = null;
+    private eventsBoundTo: HTMLElement | null = null;
 
     private resizeObserver: ResizeObserver | null = null;
 
     private animationFrame: number | null = null;
-    private injectInterval: number | null = null;
-
-    private destroyed = false;
-
-    private resetButton: HTMLButtonElement | null = null;
-    private statsPanel: HTMLDivElement | null = null;
-    private statsBody: HTMLDivElement | null = null;
-    private statsToggleButton: HTMLButtonElement | null = null;
-    private statsCollapsed = false;
-    private statsPinned = true;
-    private statsClosed = false;
-    private statsDragStart:
-        {
-            mouseX: number;
-            mouseY: number;
-            left: number;
-            top: number;
-        } | null = null;
 
     private lastTime = 0;
 
-    /*
-        DEBUG HUD BASE
+    private particleSystem = new ParticleSystem();
 
-        Luego estos valores deberían venir desde settings.
-    */
-    private debugHudEnabled = false;
+    private burstSystem = new BurstSystem(
+        this.particleSystem
+    );
 
-    private debugHudOptions: DebugHudOptions = {
-        showPerformance: true,
-        showEntities: true,
-        showCanvas: true,
-        showMouse: true
-    };
-
-    private fps = 0;
-    private fpsFrameCount = 0;
-    private fpsTimer = 0;
-
-    private frameMs = 0;
-    private updateMs = 0;
-    private drawMs = 0;
-
-    private profiler =
-        new PerformanceProfiler();
-
-    private particleSystem =
-        new ParticleSystem();
-
-    private parallaxController =
-        new ParallaxController();
-
-    private burstSystem =
-        new BurstSystem(
-            this.particleSystem
-        );
-
-    private shootingStars =
-        new ShootingStars();
+    private shootingStars = new ShootingStars();
 
     private cosmicObjects =
         new CosmicObjects();
@@ -118,90 +39,35 @@ export class CosmosRenderer {
             this.burstSystem
         );
 
-    private interactionManager:
-        InteractionManager | null = null;
-
     private mouse = {
-        x: 0,
-        y: 0,
-        radius: 130,
-        isInside: false
+        x: -9999,
+        y: -9999,
+        radius: 130
     };
 
     constructor(
         private plugin: CosmosGraphPlugin
-    ) {
-        this.particleSettingsSnapshot =
-            this.getParticleSettingsSnapshot(
-                this.plugin.settings
-            );
-    }
-
-    private particleSettingsSnapshot:
-        ParticleSettingsSnapshot;
+    ) {}
 
     start() {
-        if (this.injectInterval !== null) {
-            return;
-        }
-
-        this.destroyed = false;
-
-        this.injectCosmos();
-
-        this.injectInterval =
-            window.setInterval(() => {
-                if (this.destroyed) {
-                    return;
-                }
-
-                this.injectCosmos();
-            }, 1000);
+        this.injectLoop();
     }
 
     reloadSettings() {
-        if (this.destroyed) return;
-
-        const currentParticleSettings =
-            this.getParticleSettingsSnapshot(
-                this.plugin.settings
-            );
-
-        const didMaxParticlesChange =
-            this.particleSettingsSnapshot
-                .maxParticles !==
-            currentParticleSettings.maxParticles;
-
-        const didParticleVisualSettingsChange =
-            this.didParticleVisualSettingsChange(
-                this.particleSettingsSnapshot,
-                currentParticleSettings
-            );
-
         this.backgroundRenderer.applySettings(
             this.plugin.settings
         );
 
-        this.particleSystem.invalidateConnections();
+        this.particleSystem.limitParticles(
+            this.plugin.settings.maxParticles
+        );
 
-        if (didMaxParticlesChange) {
-            this.particleSystem.limitParticles(
-                this.plugin.settings.maxParticles
-            );
-        }
-
-        if (didParticleVisualSettingsChange) {
-            this.particleSystem.applyVisualSettings(
-                this.plugin.settings
-            );
-        }
-
-        this.particleSettingsSnapshot =
-            currentParticleSettings;
+        this.particleSystem.applyVisualSettings(
+            this.plugin.settings
+        );
 
         this.burstSystem.limitParticles(
-            this.plugin.settings
-                .burstParticleLimit
+            this.plugin.settings.burstParticleLimit
         );
 
         this.cosmicObjects.applySettings?.(
@@ -209,70 +75,33 @@ export class CosmosRenderer {
         );
 
         this.mouse.radius =
-            this.plugin.settings
-                .mouseFieldRadius;
-
-        this.parallaxController.setRadius(
-            this.plugin.settings
-                .mouseFieldRadius
-        );
-    }
-
-    private getParticleSettingsSnapshot(
-        settings: CosmosSettings
-    ): ParticleSettingsSnapshot {
-        return {
-            maxParticles: settings.maxParticles,
-            starMinSize: settings.starMinSize,
-            starMaxSize: settings.starMaxSize,
-            starHueMin: settings.starHueMin,
-            starHueMax: settings.starHueMax,
-            particleColor: settings.particleColor,
-            baseSpeed: settings.baseSpeed
-        };
-    }
-
-    private didParticleVisualSettingsChange(
-        previous: ParticleSettingsSnapshot,
-        current: ParticleSettingsSnapshot
-    ) {
-        return (
-            previous.starMinSize !==
-                current.starMinSize ||
-            previous.starMaxSize !==
-                current.starMaxSize ||
-            previous.starHueMin !==
-                current.starHueMin ||
-            previous.starHueMax !==
-                current.starHueMax ||
-            previous.particleColor !==
-                current.particleColor ||
-            previous.baseSpeed !==
-                current.baseSpeed
-        );
-    }
+        this.plugin.settings.mouseFieldRadius;
+}
 
     destroy() {
-        this.destroyed = true;
-
-        if (this.injectInterval !== null) {
-            window.clearInterval(
-                this.injectInterval
+        if (this.animationFrame !== null) {
+            cancelAnimationFrame(
+                this.animationFrame
             );
-
-            this.injectInterval = null;
         }
 
-        this.teardownGraphInstance();
+        this.resizeObserver?.disconnect();
 
-        this.cleanupCosmosElements();
+        this.canvas?.remove();
 
-        this.cleanupGraphViewStyles();
+        this.canvas = null;
+        this.ctx = null;
+        this.graphView = null;
+        this.eventsBoundTo = null;
+    }
+
+    private injectLoop() {
+        window.setInterval(() => {
+            this.injectCosmos();
+        }, 1000);
     }
 
     private injectCosmos() {
-        if (this.destroyed) return;
-
         const graphView =
             document.querySelector(
                 '.workspace-leaf-content[data-type="graph"] .view-content, .workspace-leaf-content[data-type="localgraph"] .view-content'
@@ -285,16 +114,9 @@ export class CosmosRenderer {
 
         if (
             !isNewGraphView &&
-            this.canvasLayer.isConnected()
+            this.canvas?.isConnected
         ) {
             return;
-        }
-
-        if (
-            isNewGraphView &&
-            this.graphView !== null
-        ) {
-            this.teardownGraphInstance();
         }
 
         this.graphView = graphView;
@@ -304,36 +126,54 @@ export class CosmosRenderer {
             this.plugin.settings
         );
 
-        this.ensureResetButton(graphView);
+        let canvas =
+            graphView.querySelector(
+                ".cosmos-animation-canvas"
+            ) as HTMLCanvasElement | null;
 
-        if (this.debugHudEnabled) {
-            this.ensureSystemStatsPanel(graphView);
+        if (!canvas) {
+            canvas =
+                document.createElement("canvas");
+
+            canvas.className =
+                "cosmos-animation-canvas";
+
+            canvas.style.position = "absolute";
+            canvas.style.inset = "0";
+
+            canvas.style.width = "100%";
+            canvas.style.height = "100%";
+
+            canvas.style.pointerEvents = "none";
+
+            canvas.style.zIndex = "5";
+
+            canvas.style.opacity = "1";
+
+            canvas.style.mixBlendMode =
+                "screen";
+
+            graphView.appendChild(canvas);
         }
 
-        const attached =
-            this.canvasLayer.attach(graphView);
+        this.canvas = canvas;
 
-        if (!attached) return;
+        const ctx =
+            canvas.getContext("2d");
+
+        if (!ctx) return;
+
+        this.ctx = ctx;
 
         this.setupResizeObserver();
 
         this.resizeCanvas();
 
-        const canvas =
-            this.canvasLayer.getCanvas();
-
-        if (!canvas) return;
-
-        this.parallaxController.setSize(
-            canvas.clientWidth,
-            canvas.clientHeight
-        );
-
-        this.setupInteractionManager();
+        this.setupEvents();
 
         if (
-            canvas.clientWidth <= 0 ||
-            canvas.clientHeight <= 0
+            this.canvas.clientWidth <= 0 ||
+            this.canvas.clientHeight <= 0
         ) {
             return;
         }
@@ -345,15 +185,14 @@ export class CosmosRenderer {
             this.burstSystem.clear();
 
             this.cosmicObjects.create(
-                canvas.clientWidth,
-                canvas.clientHeight
+                this.canvas.clientWidth,
+                this.canvas.clientHeight
             );
 
             this.particleSystem.createParticles(
-                canvas.clientWidth,
-                canvas.clientHeight,
-                this.plugin.settings
-                    .particleCount,
+                this.canvas.clientWidth,
+                this.canvas.clientHeight,
+                this.plugin.settings.particleCount,
                 this.plugin.settings
             );
         }
@@ -366,190 +205,9 @@ export class CosmosRenderer {
             this.lastTime =
                 performance.now();
 
-            this.animate(
-                this.lastTime
-            );
+            this.animate(this.lastTime);
         }
     }
-
-    private isGraphDetached() {
-        return (
-            !this.graphView ||
-            !this.graphView.isConnected
-        );
-    }
-
-    private teardownGraphInstance() {
-        if (this.animationFrame !== null) {
-            cancelAnimationFrame(
-                this.animationFrame
-            );
-
-            this.animationFrame = null;
-        }
-
-        this.resizeObserver?.disconnect();
-        this.resizeObserver = null;
-
-        this.interactionManager?.destroy();
-        this.interactionManager = null;
-
-        this.removeResetButton();
-        this.removeSystemStatsPanel();
-
-        this.canvasLayer.destroy();
-
-        this.graphView = null;
-    }
-
-    private ensureResetButton(
-        graphView: HTMLElement
-    ) {
-        let button =
-            graphView.querySelector(
-                `.${RESET_BUTTON_CLASS}`
-            ) as HTMLButtonElement | null;
-
-        if (!button) {
-            button =
-                document.createElement(
-                    "button"
-                );
-
-            button.className =
-                RESET_BUTTON_CLASS;
-
-            button.textContent =
-                "Reset stars";
-
-            button.title =
-                "Reset Cosmos stars";
-
-            button.addEventListener(
-                "click",
-                this.handleResetStars
-            );
-
-            graphView.appendChild(button);
-        }
-
-        this.resetButton = button;
-    }
-
-    private handleResetStars = (
-        event: MouseEvent
-    ) => {
-        event.stopPropagation();
-        event.preventDefault();
-
-        this.resetStars();
-    };
-
-    private resetStars() {
-        const width =
-            this.canvasLayer.getWidth();
-
-        const height =
-            this.canvasLayer.getHeight();
-
-        if (width <= 0 || height <= 0) {
-            return;
-        }
-
-        this.burstSystem.clear();
-
-        this.backgroundRenderer.regenerate(
-            this.plugin.settings
-        );
-
-        this.cosmicObjects.create(
-            width,
-            height
-        );
-
-        this.particleSystem.createParticles(
-            width,
-            height,
-            this.plugin.settings.particleCount,
-            this.plugin.settings
-        );
-    }
-
-    private removeResetButton() {
-        this.resetButton?.removeEventListener(
-            "click",
-            this.handleResetStars
-        );
-
-        this.resetButton?.remove();
-        this.resetButton = null;
-
-        document.removeEventListener(
-            "mousemove",
-            this.handleStatsDragMove
-        );
-
-        document.removeEventListener(
-            "mouseup",
-            this.handleStatsDragEnd
-        );
-    }
-
-    private setupInteractionManager() {
-        if (!this.graphView) return;
-
-        const canvas =
-            this.canvasLayer.getCanvas();
-
-        if (!canvas) return;
-
-        this.interactionManager?.destroy();
-
-        this.interactionManager =
-            new InteractionManager({
-                graphView:
-                    this.graphView,
-
-                canvas,
-
-                mouse:
-                    this.mouse,
-
-                parallaxController:
-                    this.parallaxController,
-
-                interactionEffects:
-                    this.interactionEffects,
-
-                cosmicObjects:
-                    this.cosmicObjects,
-
-                getSettings: () =>
-                    this.plugin.settings
-            });
-
-        this.interactionManager.attach();
-    }
-
-    private cleanupCosmosElements() {
-    CanvasLayer.cleanupAll();
-
-    document
-        .querySelectorAll(
-            [
-                ".cosmos-background-root",
-                ".cosmos-background-canvas",
-                ".cosmos-background-layer",
-                ".cosmos-stars-far",
-                ".cosmos-stars-near",
-                `.${SYSTEM_STATS_CLASS}`,
-                `.${RESET_BUTTON_CLASS}`
-            ].join(", ")
-        )
-        .forEach((element) => {
-            element.remove();
-        });
-}
 
     private setupResizeObserver() {
         if (!this.graphView) return;
@@ -558,15 +216,6 @@ export class CosmosRenderer {
 
         this.resizeObserver =
             new ResizeObserver(() => {
-                if (this.destroyed) {
-                    return;
-                }
-
-                if (this.isGraphDetached()) {
-                    this.teardownGraphInstance();
-                    return;
-                }
-
                 this.resizeCanvas();
             });
 
@@ -577,103 +226,145 @@ export class CosmosRenderer {
 
     private resizeCanvas() {
         if (
-            this.destroyed ||
-            !this.graphView
+            !this.canvas ||
+            !this.graphView ||
+            !this.ctx
         ) {
             return;
         }
 
-        const resized =
-            this.canvasLayer.resize(
-                this.graphView
-            );
+        const rect =
+            this.graphView.getBoundingClientRect();
 
-        if (!resized) return;
+        if (
+            rect.width <= 0 ||
+            rect.height <= 0
+        ) {
+            return;
+        }
 
-        this.parallaxController.setSize(
-            this.canvasLayer.getWidth(),
-            this.canvasLayer.getHeight()
+        const dpr =
+            window.devicePixelRatio || 1;
+
+        this.canvas.width = Math.floor(
+            rect.width * dpr
+        );
+
+        this.canvas.height = Math.floor(
+            rect.height * dpr
+        );
+
+        this.canvas.style.width =
+            `${rect.width}px`;
+
+        this.canvas.style.height =
+            `${rect.height}px`;
+
+        this.ctx.setTransform(
+            dpr,
+            0,
+            0,
+            dpr,
+            0,
+            0
         );
     }
 
-    private animate = (
-        time: number
-    ) => {
-        if (this.destroyed) {
+    private setupEvents() {
+        if (!this.graphView) return;
+
+        if (this.eventsBoundTo === this.graphView) {
             return;
         }
 
-        if (this.isGraphDetached()) {
-            this.teardownGraphInstance();
-            return;
-        }
+        this.eventsBoundTo = this.graphView;
 
-        const canvas =
-            this.canvasLayer.getCanvas();
+        this.graphView.addEventListener(
+            "mousemove",
+            (event: MouseEvent) => {
+                if (!this.canvas) return;
 
-        const ctx =
-            this.canvasLayer.getContext();
+                const rect =
+                    this.canvas.getBoundingClientRect();
 
-        if (
-            !canvas ||
-            !ctx
-        ) {
-            this.animationFrame = null;
-            return;
-        }
+                this.mouse.x =
+                    event.clientX - rect.left;
 
-        if (
-            canvas.clientWidth <= 0 ||
-            canvas.clientHeight <= 0
-        ) {
-            this.animationFrame =
-                requestAnimationFrame(
-                    this.animate
+                this.mouse.y =
+                    event.clientY - rect.top;
+
+                this.backgroundRenderer.updateMouse(
+                    this.mouse.x,
+                    this.mouse.y,
+                    this.plugin.settings.enableParallax,
+                    this.plugin.settings
                 );
+            }
+        );
 
-            return;
-        }
+        this.graphView.addEventListener(
+            "mouseleave",
+            () => {
+                this.mouse.x = -9999;
+                this.mouse.y = -9999;
 
-        const frameStart =
-            performance.now();
+                this.backgroundRenderer.resetMouse();
+            }
+        );
 
-        const rawDelta =
-        time - this.lastTime;
+        this.graphView.addEventListener(
+            "wheel",
+            (event: WheelEvent) => {
+                this.cosmicObjects.handleWheel(
+                    event.deltaY
+                );
+            },
+            {
+                passive: true
+            }
+        );
 
+        this.graphView.addEventListener(
+            "click",
+            (event: MouseEvent) => {
+                if (!this.canvas) return;
+
+                const rect =
+                    this.canvas.getBoundingClientRect();
+
+                const x =
+                    event.clientX - rect.left;
+
+                const y =
+                    event.clientY - rect.top;
+
+                this.interactionEffects.handleClick(
+                    x,
+                    y,
+
+                    this.canvas.clientWidth,
+                    this.canvas.clientHeight,
+
+                    this.plugin.settings.clickEffectMode,
+
+                    this.plugin.settings
+                        .burstParticleLimit
+                );
+            }
+        );
+    }
+
+    private animate = (time: number) => {
         const delta = Math.min(
-            rawDelta,
+            time - this.lastTime,
             32
         );
 
-this.lastTime = time;
+        this.lastTime = time;
 
-this.updateFps(rawDelta);
-
-        const updateStart =
-            performance.now();
-
-        this.update(
-            delta,
-            time
-        );
-
-        this.updateMs =
-            performance.now() - updateStart;
-
-        const drawStart =
-            performance.now();
+        this.update(delta, time);
 
         this.draw(time);
-
-        this.drawMs =
-            performance.now() - drawStart;
-
-        this.frameMs =
-            performance.now() - frameStart;
-
-        if (this.destroyed) {
-            return;
-        }
 
         this.animationFrame =
             requestAnimationFrame(
@@ -681,672 +372,188 @@ this.updateFps(rawDelta);
             );
     };
 
-    private updateFps(delta: number) {
-        this.fpsFrameCount++;
-        this.fpsTimer += delta;
-
-        if (this.fpsTimer < 500) {
-            return;
-        }
-
-        this.fps =
-            Math.round(
-                this.fpsFrameCount *
-                    1000 /
-                    this.fpsTimer
-            );
-
-        this.fpsFrameCount = 0;
-        this.fpsTimer = 0;
-    }
-
     private update(
         delta: number,
         time: number
     ) {
-        if (this.destroyed) {
-            return;
-        }
+        if (!this.canvas) return;
 
-        const canvas =
-            this.canvasLayer.getCanvas();
-
-        if (!canvas) return;
-
-        this.parallaxController.setSize(
-            canvas.clientWidth,
-            canvas.clientHeight
+        this.interactionEffects.update(
+            delta,
+            this.plugin.settings.gravityCooldownMs
         );
 
-        this.profiler.measure(
-            "parallaxController.update",
-            () => {
-                this.parallaxController.update(
-                    delta
-                );
-            }
+        this.backgroundRenderer.update(
+            this.plugin.settings.enableParallax
         );
 
-        this.profiler.measure(
-            "interactionEffects.update",
-            () => {
-                this.interactionEffects.update(
-                    delta,
-                    this.plugin.settings
-                        .gravityCooldownMs
-                );
-            }
+        this.cosmicObjects.update(
+            delta
         );
 
-        this.profiler.measure(
-            "backgroundRenderer.update",
-            () => {
-                const backgroundParallax =
-                    this.parallaxController.getOffset(
-                        1
-                    );
+        this.particleSystem.update(
+            this.canvas.clientWidth,
+            this.canvas.clientHeight,
 
-                this.backgroundRenderer.setParallax(
-                    backgroundParallax.x,
-                    backgroundParallax.y
-                );
+            this.mouse,
 
-                this.backgroundRenderer.update(
-                    this.plugin.settings
-                        .enableBackground,
-                    this.plugin.settings
-                        .enableParallax
-                );
-            }
-        );
+            delta,
 
-        this.profiler.measure(
-            "cosmicObjects.update",
-            () => {
-                this.cosmicObjects.update(
-                    delta
-                );
-            }
-        );
-
-        this.profiler.measure(
-            "particleSystem.update",
-            () => {
-                this.particleSystem.update(
-                    canvas.clientWidth,
-                    canvas.clientHeight,
-
-                    this.mouse,
-
-                    delta,
-
-                    this.plugin.settings
-                );
-            }
-        );
-
-        this.profiler.measure(
-            "burstSystem.update",
-            () => {
-                this.burstSystem.update(
-                    canvas.clientWidth,
-                    canvas.clientHeight,
-                    delta,
-                    this.plugin.settings.maxParticles
-                );
-            }
-        );
-
-        this.profiler.measure(
-            "shootingStars.update",
-            () => {
-                this.shootingStars.update(
-                    delta,
-                    time,
-
-                    canvas.clientWidth,
-                    canvas.clientHeight,
-
-                    this.plugin.settings
-                        .enableShootingStars
-                );
-            }
-        );
-    }
-
-    private draw(
-    time: number
-) {
-    if (this.destroyed) {
-        return;
-    }
-
-    const ctx =
-        this.canvasLayer.getContext();
-
-    if (!ctx) {
-        return;
-    }
-
-    const visualMouse =
-        this.parallaxController.getMouse();
-
-    this.profiler.measure(
-        "canvasLayer.clear",
-        () => {
-            this.canvasLayer.clear();
-        }
-    );
-
-    if (this.plugin.settings.enableParticles) {
-        this.profiler.measure(
-            "cosmicObjects.draw",
-            () => {
-                this.cosmicObjects.draw(
-                    ctx,
-                    time,
-                    visualMouse,
-                    this.plugin.settings.enableParallax
-                );
-            }
-        );
-
-        this.profiler.measure(
-            "particleSystem.draw",
-            () => {
-                this.particleSystem.draw(
-                    ctx,
-                    time,
-                    visualMouse,
-                    this.plugin.settings
-                );
-            }
-        );
-
-        this.profiler.measure(
-            "burstSystem.draw",
-            () => {
-                this.burstSystem.draw(
-                    ctx,
-                    this.mouse,
-                    this.plugin.settings
-                );
-            }
-        );
-    }
-
-    this.profiler.measure(
-        "shootingStars.draw",
-        () => {
-            this.shootingStars.draw(
-                ctx
-            );
-        }
-    );
-
-    this.profiler.measure(
-        "burstCooldownHud.draw",
-        () => {
-            drawBurstCooldownHud(
-                ctx,
-                this.mouse,
-                this.plugin.settings.clickEffectMode,
-                this.interactionEffects.getBurstCooldownProgress(
-                    this.plugin.settings.gravityCooldownMs
-                ),
-                this.interactionEffects.canUseBurst()
-            );
-        }
-    );
-
-    this.updateSystemStatsPanel();
-
-    this.profiler.reportEvery(
-        1000
-    );
-}
-
-    private updateSystemStatsPanel() {
-        if (!this.debugHudEnabled) {
-            return;
-        }
-
-        if (this.statsClosed) {
-            return;
-        }
-
-        if (!this.statsBody) {
-            return;
-        }
-
-        const metrics =
-            this.getDebugHudMetrics();
-
-        this.statsBody.empty();
-
-        if (this.statsCollapsed) {
-            return;
-        }
-
-        this.addStatsRow(
-            "FPS",
-            `${metrics.fps}`
-        );
-
-        this.addStatsRow(
-            "Frame time",
-            `${metrics.frameMs.toFixed(2)} ms`
-        );
-
-        this.addStatsRow(
-            "Update",
-            `${metrics.updateMs.toFixed(2)} ms`
-        );
-
-        this.addStatsRow(
-            "Draw",
-            `${metrics.drawMs.toFixed(2)} ms`
-        );
-
-        this.addStatsDivider();
-
-        this.addStatsRow(
-            "Particles",
-            `${metrics.particles}`
-        );
-
-        this.addStatsRow(
-            "Burst particles",
-            `${metrics.burstParticles}`
-        );
-
-        this.addStatsRow(
-            "Shooting stars",
-            `${metrics.shootingStars}`
-        );
-
-        this.addStatsDivider();
-
-        this.addStatsRow(
-            "Connections",
-            `${metrics.connectionSegments}`
-        );
-
-        this.addStatsRow(
-            "Connection time",
-            `${metrics.connectionDrawMs.toFixed(2)} ms`
-        );
-
-        this.addStatsRow(
-            "Canvas",
-            `${metrics.canvasWidth} x ${metrics.canvasHeight}`
-        );
-
-        this.addStatsRow(
-            "Mouse",
-            metrics.mouseInside
-                ? "Inside"
-                : "Outside"
-        );
-    }
-
-    private ensureSystemStatsPanel(
-        graphView: HTMLElement
-    ) {
-        if (!this.debugHudEnabled) {
-            return;
-        }
-
-        this.ensureSystemStatsToggle(
-            graphView
-        );
-
-        if (this.statsClosed) {
-            return;
-        }
-
-        if (this.statsPanel?.isConnected) {
-            return;
-        }
-
-        const panel =
-            document.createElement("div");
-
-        panel.className =
-            SYSTEM_STATS_CLASS;
-
-        const header =
-            panel.createDiv({
-                cls: "cosmos-system-stats-header"
-            });
-
-        header.createEl("span", {
-            text: "System"
-        });
-
-        const actions =
-            header.createDiv({
-                cls: "cosmos-system-stats-actions"
-            });
-
-        const collapseButton =
-            actions.createEl("button", {
-                text: "−",
-                cls: "cosmos-system-stats-button"
-            });
-
-        const pinButton =
-            actions.createEl("button", {
-                text: "Pin",
-                cls: "cosmos-system-stats-button"
-            });
-
-        const closeButton =
-            actions.createEl("button", {
-                text: "x",
-                cls: "cosmos-system-stats-button"
-            });
-
-        const body =
-            panel.createDiv({
-                cls: "cosmos-system-stats-body"
-            });
-
-        header.addEventListener(
-            "mousedown",
-            this.handleStatsDragStart
-        );
-
-        collapseButton.onclick = () => {
-            this.statsCollapsed =
-                !this.statsCollapsed;
-
-            collapseButton.textContent =
-                this.statsCollapsed
-                    ? "+"
-                    : "−";
-
-            panel.toggleClass(
-                "is-collapsed",
-                this.statsCollapsed
-            );
-        };
-
-        pinButton.onclick = () => {
-            this.statsPinned =
-                !this.statsPinned;
-
-            pinButton.textContent =
-                this.statsPinned
-                    ? "Pin"
-                    : "Float";
-
-            panel.toggleClass(
-                "is-floating",
-                !this.statsPinned
-            );
-        };
-
-        closeButton.onclick = () => {
-            this.statsClosed = true;
-            this.statsPanel?.remove();
-            this.statsPanel = null;
-            this.statsBody = null;
-            this.statsToggleButton?.show();
-        };
-
-        graphView.appendChild(panel);
-
-        this.statsPanel = panel;
-        this.statsBody = body;
-        this.statsToggleButton?.hide();
-    }
-
-    private ensureSystemStatsToggle(
-        graphView: HTMLElement
-    ) {
-        if (!this.debugHudEnabled) {
-            return;
-        }
-
-        if (this.statsToggleButton?.isConnected) {
-            return;
-        }
-
-        const button =
-            document.createElement("button");
-
-        button.className =
-            SYSTEM_STATS_TOGGLE_CLASS;
-
-        button.textContent =
-            "System";
-
-        button.title =
-            "Open system stats";
-
-        button.onclick = () => {
-            this.statsClosed = false;
-            button.hide();
-            this.ensureSystemStatsPanel(
-                graphView
-            );
-        };
-
-        graphView.appendChild(button);
-
-        this.statsToggleButton = button;
-
-        if (!this.statsClosed) {
-            button.hide();
-        }
-    }
-
-    private handleStatsDragStart = (
-        event: MouseEvent
-    ) => {
-        if (
-            !this.statsPanel ||
-            (
-                event.target instanceof HTMLElement &&
-                event.target.closest("button")
-            )
-        ) {
-            return;
-        }
-
-        event.preventDefault();
-
-        const panelRect =
-            this.statsPanel.getBoundingClientRect();
-
-        const parentRect =
-            this.statsPanel.offsetParent instanceof HTMLElement
-                ? this.statsPanel.offsetParent.getBoundingClientRect()
-                : { left: 0, top: 0 };
-
-        this.statsDragStart = {
-            mouseX: event.clientX,
-            mouseY: event.clientY,
-            left: panelRect.left - parentRect.left,
-            top: panelRect.top - parentRect.top
-        };
-
-        document.addEventListener(
-            "mousemove",
-            this.handleStatsDragMove
-        );
-
-        document.addEventListener(
-            "mouseup",
-            this.handleStatsDragEnd
-        );
-    };
-
-    private handleStatsDragMove = (
-        event: MouseEvent
-    ) => {
-        if (
-            !this.statsPanel ||
-            !this.statsDragStart
-        ) {
-            return;
-        }
-
-        const nextLeft =
-            this.statsDragStart.left +
-            event.clientX -
-            this.statsDragStart.mouseX;
-
-        const nextTop =
-            this.statsDragStart.top +
-            event.clientY -
-            this.statsDragStart.mouseY;
-
-        this.statsPanel.style.left =
-            `${Math.max(0, nextLeft)}px`;
-
-        this.statsPanel.style.top =
-            `${Math.max(0, nextTop)}px`;
-
-        this.statsPanel.style.right =
-            "auto";
-    };
-
-    private handleStatsDragEnd = () => {
-        this.statsDragStart = null;
-
-        document.removeEventListener(
-            "mousemove",
-            this.handleStatsDragMove
-        );
-
-        document.removeEventListener(
-            "mouseup",
-            this.handleStatsDragEnd
-        );
-    };
-
-    private removeSystemStatsPanel() {
-        this.statsPanel?.remove();
-        this.statsToggleButton?.remove();
-
-        this.statsPanel = null;
-        this.statsBody = null;
-        this.statsToggleButton = null;
-    }
-
-    private addStatsRow(
-        label: string,
-        value: string
-    ) {
-        if (!this.statsBody) {
-            return;
-        }
-
-        const row =
-            this.statsBody.createDiv({
-                cls: "cosmos-system-stats-row"
-            });
-
-        row.createSpan({
-            text: label
-        });
-
-        row.createSpan({
-            text: value
-        });
-    }
-
-    private addStatsDivider() {
-        this.statsBody?.createDiv({
-            cls: "cosmos-system-stats-divider"
-        });
-    }
-
-    private getDebugHudMetrics(): DebugHudMetrics {
-    const particleMetrics =
-        this.particleSystem.getDebugMetrics();
-
-    return {
-        fps: this.fps,
-
-        frameMs: this.frameMs,
-        updateMs: this.updateMs,
-        drawMs: this.drawMs,
-
-        particleDrawMs:
-            particleMetrics.drawParticlesMs,
-
-        connectionDrawMs:
-            particleMetrics.drawConnectionsMs,
-
-        connectionGridMs:
-            particleMetrics.connectionGridMs,
-
-        connectionScanMs:
-            particleMetrics.connectionScanMs,
-
-        connectionStrokeMs:
-            particleMetrics.connectionStrokeMs,
-
-        connectionSegments:
-            particleMetrics.connectionSegments,
-
-        connectionBuckets:
-            particleMetrics.connectionBuckets,
-
-        connectionRenderPoints:
-            particleMetrics.connectionRenderPoints,
-
-        particles:
-            this.particleSystem.getParticleCount(),
-
-        burstParticles:
-            this.burstSystem.getParticleCount(),
-
-        shootingStars:
-            this.shootingStars.getStarCount(),
-
-        canvasWidth:
-            this.canvasLayer.getWidth(),
-
-        canvasHeight:
-            this.canvasLayer.getHeight(),
-
-        mouseInside:
-            this.mouse.isInside,
-
-        clickEffectMode:
             this.plugin.settings
-                .clickEffectMode
-    };
+        );
+
+        this.burstSystem.update(
+            this.canvas.clientWidth,
+            this.canvas.clientHeight,
+            delta
+        );
+
+        this.shootingStars.update(
+            delta,
+            time,
+
+            this.canvas.clientWidth,
+            this.canvas.clientHeight,
+
+            this.plugin.settings
+                .enableShootingStars
+        );
+    }
+
+    private draw(time: number) {
+    if (
+        !this.canvas ||
+        !this.ctx
+    ) {
+        return;
+    }
+
+    this.ctx.clearRect(
+        0,
+        0,
+        this.canvas.clientWidth,
+        this.canvas.clientHeight
+    );
+
+    if (
+        this.plugin.settings.enableParticles
+    ) {
+        this.cosmicObjects.draw(
+            this.ctx,
+            time,
+            this.mouse,
+            this.plugin.settings.enableParallax
+        );
+
+        this.particleSystem.draw(
+            this.ctx,
+            time,
+            this.mouse,
+            this.plugin.settings
+        );
+
+        this.burstSystem.draw(
+            this.ctx,
+            this.mouse
+        );
+    }
+
+    this.shootingStars.draw(
+        this.ctx
+    );
+
+    this.drawBurstCooldownHud(
+        this.ctx
+    );
 }
 
-    private cleanupGraphViewStyles() {
-        const graphViews =
-            document.querySelectorAll<HTMLElement>(
-                '.workspace-leaf-content[data-type="graph"] .view-content, .workspace-leaf-content[data-type="localgraph"] .view-content'
+    private drawBurstCooldownHud(
+        ctx: CanvasRenderingContext2D
+    ) {
+        if (
+            this.plugin.settings
+                .clickEffectMode === "none" ||
+
+            this.mouse.x < 0 ||
+            this.mouse.y < 0
+        ) {
+            return;
+        }
+
+        const progress =
+            this.interactionEffects.getBurstCooldownProgress(
+                this.plugin.settings
+                    .gravityCooldownMs
             );
 
-        graphViews.forEach(
-            (graphView) => {
-                graphView.style.removeProperty(
-                    "background"
-                );
+        const ready =
+            this.interactionEffects.canUseBurst();
 
-                graphView.style.removeProperty(
-                    "background-color"
-                );
+        const x =
+            this.mouse.x + 14;
 
-                graphView.style.removeProperty(
-                    "position"
-                );
+        const y =
+            this.mouse.y + 18;
 
-                graphView.style.removeProperty(
-                    "overflow"
-                );
-            }
+        const radius = 6;
+
+        ctx.save();
+
+        ctx.beginPath();
+
+        ctx.strokeStyle = ready
+            ? "rgba(210, 235, 255, 0.9)"
+            : "rgba(160, 190, 255, 0.35)";
+
+        ctx.lineWidth = 1.4;
+
+        ctx.arc(
+            x,
+            y,
+            radius,
+            0,
+            Math.PI * 2
         );
+
+        ctx.stroke();
+
+        ctx.beginPath();
+
+        ctx.strokeStyle =
+            "rgba(120, 190, 255, 0.95)";
+
+        ctx.lineWidth = 2;
+
+        ctx.arc(
+            x,
+            y,
+            radius,
+
+            -Math.PI / 2,
+
+            -Math.PI / 2 +
+                Math.PI * 2 * progress
+        );
+
+        ctx.stroke();
+
+        if (ready) {
+            ctx.beginPath();
+
+            ctx.fillStyle =
+                "rgba(180, 220, 255, 0.75)";
+
+            ctx.arc(
+                x,
+                y,
+                2,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+        }
+
+        ctx.restore();
     }
 }

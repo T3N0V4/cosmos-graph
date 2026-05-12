@@ -24,138 +24,48 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian9 = require("obsidian");
 
-// src/effects/parallaxEffect.ts
-function getParallaxOffset(mouseX, mouseY, width, height, strength) {
-  if (width <= 0 || height <= 0) {
-    return { x: 0, y: 0 };
-  }
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const offsetX = (mouseX - centerX) / centerX;
-  const offsetY = (mouseY - centerY) / centerY;
-  return {
-    x: offsetX * strength,
-    y: offsetY * strength
-  };
-}
-
-// src/Controller/parallaxController.ts
-var ParallaxController = class {
-  constructor() {
-    this.width = 0;
-    this.height = 0;
-    this.currentX = 0;
-    this.currentY = 0;
-    this.targetX = 0;
-    this.targetY = 0;
-    this.radius = 130;
-    this.isInside = false;
-    this.initialized = false;
-  }
-  setSize(width, height) {
-    this.width = width;
-    this.height = height;
-    if (!this.initialized && width > 0 && height > 0) {
-      this.currentX = width / 2;
-      this.currentY = height / 2;
-      this.targetX = width / 2;
-      this.targetY = height / 2;
-      this.initialized = true;
-    }
-  }
-  setRadius(radius) {
-    this.radius = radius;
-  }
-  move(x, y) {
-    this.isInside = true;
-    this.targetX = x;
-    this.targetY = y;
-  }
-  leave() {
-    this.isInside = false;
-    this.targetX = this.width / 2;
-    this.targetY = this.height / 2;
-  }
-  update(delta) {
-    const smoothing = 1 - Math.pow(
-      1e-3,
-      delta / 1e3
-    );
-    this.currentX += (this.targetX - this.currentX) * smoothing;
-    this.currentY += (this.targetY - this.currentY) * smoothing;
-  }
-  getMouse() {
-    return {
-      x: this.currentX,
-      y: this.currentY,
-      radius: this.radius,
-      isInside: this.isInside
-    };
-  }
-  getOffset(strength) {
-    return getParallaxOffset(
-      this.currentX,
-      this.currentY,
-      this.width,
-      this.height,
-      strength
-    );
-  }
-  reset() {
-    this.isInside = false;
-    this.currentX = this.width / 2;
-    this.currentY = this.height / 2;
-    this.targetX = this.width / 2;
-    this.targetY = this.height / 2;
-  }
-};
-
 // src/render/particleSystem.ts
 var ParticleSystem = class {
   constructor() {
     this.particles = [];
     this.spawnTimer = 0;
     this.clusterPoints = [];
-    this.currentMaxParticles = 320;
-    this.lastWidth = 0;
-    this.lastHeight = 0;
-    this.resizeGraceTime = 0;
-    this.resizeGraceDuration = 180;
-    this.mouseInfluence = 0;
-    /*
-        Connection cache:
-        - Las partículas se siguen moviendo cada frame.
-        - Las conexiones se recalculan cada cierto tiempo.
-        - Cada frame se redibujan usando posiciones actuales.
-    */
-    this.cachedConnectionPairs = [];
-    this.lastConnectionCacheTime = 0;
-    this.connectionCacheIntervalMs = 80;
-    this.debugMetrics = {
-      drawParticlesMs: 0,
-      drawConnectionsMs: 0,
-      connectionGridMs: 0,
-      connectionScanMs: 0,
-      connectionStrokeMs: 0,
-      connectionSegments: 0,
-      connectionBuckets: 0,
-      connectionRenderPoints: 0,
-      particleCount: 0
-    };
   }
   hasParticles() {
     return this.particles.length > 0;
   }
-  getParticleCount() {
-    return this.particles.length;
-  }
-  getDebugMetrics() {
-    return this.debugMetrics;
-  }
-  applyVisualSettings(_settings) {
-  }
-  invalidateConnections() {
-    this.invalidateConnectionCache();
+  applyVisualSettings(settings) {
+    for (const particle of this.particles) {
+      if (particle.kind !== "ambient") {
+        continue;
+      }
+      particle.size = Math.max(
+        settings.starMinSize,
+        Math.min(
+          settings.starMaxSize,
+          particle.size
+        )
+      );
+      particle.hue = Math.max(
+        settings.starHueMin,
+        Math.min(
+          settings.starHueMax,
+          particle.hue
+        )
+      );
+      const currentSpeed = Math.sqrt(
+        particle.speedX * particle.speedX + particle.speedY * particle.speedY
+      );
+      if (currentSpeed > 0 && settings.baseSpeed > 0) {
+        const speedRatio = settings.baseSpeed / currentSpeed;
+        particle.speedX *= speedRatio;
+        particle.speedY *= speedRatio;
+      }
+      particle.glow = Math.max(
+        particle.glow ?? 0,
+        0.04
+      );
+    }
   }
   addAmbientParticle(particle) {
     this.particles.push({
@@ -173,201 +83,70 @@ var ParticleSystem = class {
       affectedByGravity: void 0,
       glow: 0
     });
-    this.limitParticles(this.currentMaxParticles);
-    this.invalidateConnectionCache();
   }
   createParticles(width, height, amount, settings) {
     if (width <= 0 || height <= 0)
       return;
-    this.lastWidth = width;
-    this.lastHeight = height;
-    this.resizeGraceTime = 0;
-    this.currentMaxParticles = settings.maxParticles;
-    const safeAmount = Math.min(
-      amount,
-      settings.maxParticles
-    );
     this.particles = [];
     this.generateClusterPoints(width, height);
-    for (let i = 0; i < safeAmount; i++) {
+    for (let i = 0; i < amount; i++) {
       this.particles.push(
-        this.createInitialUniverseParticle(
-          width,
-          height,
-          settings
-        )
+        this.createInitialUniverseParticle(width, height, settings)
       );
     }
-    this.limitParticles(settings.maxParticles);
-    this.invalidateConnectionCache();
   }
   update(width, height, mouse, delta, settings) {
-    if (width <= 0 || height <= 0) {
-      return;
-    }
-    this.handleResize(
-      width,
-      height
-    );
-    if (this.resizeGraceTime > 0) {
-      this.resizeGraceTime = Math.max(
-        0,
-        this.resizeGraceTime - delta
-      );
-    }
-    this.currentMaxParticles = settings.maxParticles;
-    this.generateProgressively(
-      width,
-      height,
-      delta,
-      settings
-    );
-    this.limitParticles(settings.maxParticles);
-    const targetMouseInfluence = mouse.isInside === true ? 1 : 0;
-    const mouseFadeSpeed = targetMouseInfluence > this.mouseInfluence ? 0.018 : 6e-3;
-    this.mouseInfluence += (targetMouseInfluence - this.mouseInfluence) * Math.min(
-      1,
-      delta * mouseFadeSpeed
-    );
-    const mouseFieldEnabled = settings.enableMouseField && this.mouseInfluence > 0.01 && mouse.x >= 0 && mouse.y >= 0;
-    const mouseFieldRadiusSquared = settings.mouseFieldRadius * settings.mouseFieldRadius;
-    const baseSpeedForce = this.getBaseSpeedMultiplier(settings);
+    this.generateProgressively(width, height, delta, settings);
     for (const particle of this.particles) {
-      if (particle.connectionAge !== void 0 && particle.connectionFadeDuration !== void 0) {
-        particle.connectionAge += delta;
-        if (particle.connectionAge > particle.connectionFadeDuration) {
-          particle.connectionAge = particle.connectionFadeDuration;
-        }
-      }
       const depth = particle.depth ?? 1;
       const depthMotion = particle.kind === "deep" ? 0.08 : 0.35 + depth * 0.65;
-      particle.speedX += this.random(-6e-3, 6e-3) * depthMotion * baseSpeedForce;
-      particle.speedY += this.random(-6e-3, 6e-3) * depthMotion * baseSpeedForce;
+      particle.speedX += this.random(-6e-3, 6e-3) * depthMotion;
+      particle.speedY += this.random(-6e-3, 6e-3) * depthMotion;
       particle.speedX *= 0.992;
       particle.speedY *= 0.992;
-      if (mouseFieldEnabled && particle.kind === "ambient") {
-        const mouseDx = mouse.x - particle.x;
-        const mouseDy = mouse.y - particle.y;
-        const mouseDistanceSquared = mouseDx * mouseDx + mouseDy * mouseDy;
-        if (mouseDistanceSquared < mouseFieldRadiusSquared) {
-          const mouseDistance = Math.sqrt(mouseDistanceSquared) || 1;
-          const force = (settings.mouseFieldRadius - mouseDistance) / settings.mouseFieldRadius;
-          const depthForce = force * settings.mouseRepulseStrength * depthMotion * this.mouseInfluence;
-          const directionX = mouseDx / mouseDistance;
-          const directionY = mouseDy / mouseDistance;
-          particle.vx -= directionX * depthForce / particle.density;
-          particle.vy -= directionY * depthForce / particle.density;
-        }
-      }
-      if (particle.affectedByGravity && particle.gravityX !== void 0 && particle.gravityY !== void 0) {
-        const dx = particle.gravityX - particle.x;
-        const dy = particle.gravityY - particle.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const dirX = dx / dist;
-        const dirY = dy / dist;
-        const attractionForce = Math.min(
-          2.8,
-          dist * 0.012
-        );
-        particle.vx += dirX * attractionForce;
-        particle.vy += dirY * attractionForce;
-        if (dist < 120) {
-          particle.vx *= 0.9;
-          particle.vy *= 0.9;
-        }
-        particle.vx *= 0.94;
-        particle.vy *= 0.94;
+      const mouseDx = mouse.x - particle.x;
+      const mouseDy = mouse.y - particle.y;
+      const mouseDistance = Math.sqrt(
+        mouseDx * mouseDx + mouseDy * mouseDy
+      );
+      if (settings.enableMouseField && particle.kind === "ambient" && mouseDistance < settings.mouseFieldRadius) {
+        const force = (settings.mouseFieldRadius - mouseDistance) / settings.mouseFieldRadius;
+        const angle = Math.atan2(mouseDy, mouseDx);
+        const depthForce = force * settings.mouseRepulseStrength * depthMotion;
+        const targetX = particle.x - Math.cos(angle) * depthForce;
+        const targetY = particle.y - Math.sin(angle) * depthForce;
+        particle.vx += (targetX - particle.x) / particle.density;
+        particle.vy += (targetY - particle.y) / particle.density;
       }
       particle.x += (particle.speedX + particle.vx * 0.05) * depthMotion;
       particle.y += (particle.speedY + particle.vy * 0.05) * depthMotion;
       particle.vx *= 0.95;
       particle.vy *= 0.95;
-      if (this.resizeGraceTime <= 0) {
-        if (particle.x < -50)
-          particle.x = width + 50;
-        if (particle.x > width + 50)
-          particle.x = -50;
-        if (particle.y < -50)
-          particle.y = height + 50;
-        if (particle.y > height + 50)
-          particle.y = -50;
-      } else {
-        particle.x = Math.max(
-          -50,
-          Math.min(
-            width + 50,
-            particle.x
-          )
-        );
-        particle.y = Math.max(
-          -50,
-          Math.min(
-            height + 50,
-            particle.y
-          )
-        );
-      }
+      if (particle.x < -50)
+        particle.x = width + 50;
+      if (particle.x > width + 50)
+        particle.x = -50;
+      if (particle.y < -50)
+        particle.y = height + 50;
+      if (particle.y > height + 50)
+        particle.y = -50;
     }
   }
   draw(ctx, time, mouse, settings) {
-    const parallax = this.getParallaxOffset(
-      ctx,
-      mouse,
-      settings
-    );
-    this.debugMetrics.particleCount = this.particles.length;
+    const parallax = this.getParallaxOffset(ctx, mouse, settings);
     if (settings.enableConnections) {
-      const connectionsStart = performance.now();
-      this.drawConnections(
-        ctx,
-        mouse,
-        settings,
-        parallax
-      );
-      this.debugMetrics.drawConnectionsMs = performance.now() - connectionsStart;
-    } else {
-      this.debugMetrics.drawConnectionsMs = 0;
-      this.debugMetrics.connectionGridMs = 0;
-      this.debugMetrics.connectionScanMs = 0;
-      this.debugMetrics.connectionStrokeMs = 0;
-      this.debugMetrics.connectionSegments = 0;
-      this.debugMetrics.connectionBuckets = 0;
-      this.debugMetrics.connectionRenderPoints = 0;
+      this.drawConnections(ctx, mouse, settings, parallax);
     }
-    const particlesStart = performance.now();
-    this.drawParticles(
-      ctx,
-      time,
-      mouse,
-      settings,
-      parallax
-    );
-    this.debugMetrics.drawParticlesMs = performance.now() - particlesStart;
+    this.drawParticles(ctx, time, mouse, settings, parallax);
   }
   limitParticles(maxParticles) {
-    if (maxParticles <= 0) {
-      this.particles = [];
-      this.invalidateConnectionCache();
-      return;
-    }
     if (this.particles.length <= maxParticles)
       return;
-    let excess = this.particles.length - maxParticles;
+    const excess = this.particles.length - maxParticles;
+    let removed = 0;
     this.particles = this.particles.filter((particle) => {
-      if (excess > 0 && particle.kind === "ambient") {
-        excess--;
-        return false;
-      }
-      return true;
-    });
-    if (this.particles.length <= maxParticles) {
-      this.invalidateConnectionCache();
-      return;
-    }
-    excess = this.particles.length - maxParticles;
-    this.particles = this.particles.filter((particle) => {
-      if (excess > 0 && particle.kind === "deep") {
-        excess--;
+      if (removed < excess && particle.kind === "ambient") {
+        removed++;
         return false;
       }
       return true;
@@ -378,27 +157,16 @@ var ParticleSystem = class {
         this.particles.length - maxParticles
       );
     }
-    this.invalidateConnectionCache();
   }
   generateProgressively(width, height, delta, settings) {
-    if (!settings.enableAutoSpawn) {
-      return;
-    }
-    const availableSlots = settings.maxParticles - this.particles.length;
-    if (availableSlots <= 0) {
-      this.limitParticles(settings.maxParticles);
+    if (!settings.enableAutoSpawn || this.particles.length >= settings.maxParticles) {
       return;
     }
     this.spawnTimer += delta;
-    if (this.spawnTimer < settings.autoSpawnIntervalMs) {
+    if (this.spawnTimer < settings.autoSpawnIntervalMs)
       return;
-    }
     this.spawnTimer = 0;
-    const amountToSpawn = Math.min(
-      settings.autoSpawnAmount,
-      availableSlots
-    );
-    for (let i = 0; i < amountToSpawn; i++) {
+    for (let i = 0; i < settings.autoSpawnAmount; i++) {
       const particle = this.createAmbientParticle(
         width,
         height,
@@ -408,8 +176,6 @@ var ParticleSystem = class {
       particle.glow = 0.16;
       this.particles.push(particle);
     }
-    this.limitParticles(settings.maxParticles);
-    this.invalidateConnectionCache();
   }
   createInitialUniverseParticle(width, height, settings) {
     const centerX = width / 2;
@@ -449,20 +215,9 @@ var ParticleSystem = class {
         y += (cluster.y - y) * this.random(0.18, 0.42);
       }
       attempts++;
-    } while (attempts < 40 && (x < safeMargin || x > width - safeMargin || y < safeMargin || y > height - safeMargin || this.distance(
-      x,
-      y,
-      centerX,
-      centerY
-    ) < cleanRadius));
-    x = Math.max(
-      safeMargin,
-      Math.min(width - safeMargin, x)
-    );
-    y = Math.max(
-      safeMargin,
-      Math.min(height - safeMargin, y)
-    );
+    } while (attempts < 40 && (x < safeMargin || x > width - safeMargin || y < safeMargin || y > height - safeMargin || this.distance(x, y, centerX, centerY) < cleanRadius));
+    x = Math.max(safeMargin, Math.min(width - safeMargin, x));
+    y = Math.max(safeMargin, Math.min(height - safeMargin, y));
     const isDeep = this.shouldCreateDeepParticle();
     return {
       x,
@@ -476,7 +231,10 @@ var ParticleSystem = class {
         settings.starMaxSize
       ),
       density: isDeep ? this.random(38, 70) : this.random(10, 36),
-      hue: isDeep ? this.random(205, 245) : this.getParticleHue(settings),
+      hue: isDeep ? this.random(205, 245) : this.random(
+        settings.starHueMin,
+        settings.starHueMax
+      ),
       speedX: isDeep ? this.random(
         -settings.baseSpeed * 0.15,
         settings.baseSpeed * 0.15
@@ -522,31 +280,17 @@ var ParticleSystem = class {
           y += (cluster.y - y) * this.random(0.14, 0.32);
         }
         attempts++;
-      } while (attempts < 30 && this.distance(
-        x,
-        y,
-        centerX,
-        centerY
-      ) < cleanRadius);
+      } while (attempts < 30 && this.distance(x, y, centerX, centerY) < cleanRadius);
     }
     return {
       x,
       y,
       depth: this.randomDepth(),
-      size: this.random(
-        settings.starMinSize,
-        settings.starMaxSize
-      ),
+      size: this.random(settings.starMinSize, settings.starMaxSize),
       density: this.random(8, 32),
-      hue: this.getParticleHue(settings),
-      speedX: this.random(
-        -settings.baseSpeed,
-        settings.baseSpeed
-      ),
-      speedY: this.random(
-        -settings.baseSpeed,
-        settings.baseSpeed
-      ),
+      hue: this.random(settings.starHueMin, settings.starHueMax),
+      speedX: this.random(-settings.baseSpeed, settings.baseSpeed),
+      speedY: this.random(-settings.baseSpeed, settings.baseSpeed),
       vx: 0,
       vy: 0,
       kind: "ambient",
@@ -554,55 +298,23 @@ var ParticleSystem = class {
     };
   }
   drawParticles(ctx, time, mouse, settings, parallax) {
-    const mouseGlowEnabled = settings.enableMouseGlow && mouse.isInside === true && this.mouseInfluence > 0.01 && mouse.x >= 0 && mouse.y >= 0;
-    const colorProfile = this.getParticleColorProfile(settings);
-    const particleBrightness = this.clamp(
-      settings.particleBrightness,
-      0,
-      3
-    );
-    const particleGlow = this.clamp(
-      settings.particleGlow,
-      0,
-      1
-    );
-    const mouseGlowRadius = settings.mouseGlowRadius;
-    const mouseGlowMinX = mouse.x - mouseGlowRadius;
-    const mouseGlowMaxX = mouse.x + mouseGlowRadius;
-    const mouseGlowMinY = mouse.y - mouseGlowRadius;
-    const mouseGlowMaxY = mouse.y + mouseGlowRadius;
     for (const particle of this.particles) {
-      const renderPosition = this.getRenderPosition(
-        particle,
-        parallax
-      );
+      const renderPosition = this.getRenderPosition(particle, parallax);
       const depth = particle.depth ?? 1;
       const isDeep = particle.kind === "deep";
       const depthSize = isDeep ? 0.22 + depth * 0.18 : 0.45 + depth * 0.75;
       const depthAlpha = isDeep ? 0.12 + depth * 0.18 : 0.32 + depth * 0.68;
-      const canReceiveMouseGlow = mouseGlowEnabled && renderPosition.x >= mouseGlowMinX && renderPosition.x <= mouseGlowMaxX && renderPosition.y >= mouseGlowMinY && renderPosition.y <= mouseGlowMaxY;
-      const mouseGlow = canReceiveMouseGlow ? this.getMouseGlow(
+      const mouseGlow = this.getMouseGlow(
         particle,
         mouse,
         settings,
-        renderPosition
-      ) * this.mouseInfluence : 0;
-      const particleHue = this.getRenderParticleHue(
-        particle,
-        settings
+        parallax
       );
-      const baseSize = isDeep ? particle.size : this.clamp(
-        particle.size,
-        settings.starMinSize,
-        settings.starMaxSize
-      );
-      let alpha = (0.24 + Math.sin(
-        time * 1e-3 + particle.density
-      ) * 0.1) * depthAlpha * particleBrightness;
+      let alpha = (0.24 + Math.sin(time * 1e-3 + particle.density) * 0.1) * depthAlpha;
       if (isDeep)
         alpha *= 0.7;
       alpha += mouseGlow * settings.mouseGlowParticleAlpha * depthAlpha;
-      const size = baseSize * depthSize + mouseGlow * settings.mouseGlowParticleSize * depthSize + (particle.glow ?? 0) * 0.8 * depthSize;
+      const size = particle.size * depthSize + mouseGlow * settings.mouseGlowParticleSize * depthSize + (particle.glow ?? 0) * 0.8 * depthSize;
       let saturation = 82;
       let lightness = 72;
       let glowSaturation = 90;
@@ -633,62 +345,36 @@ var ParticleSystem = class {
         glowLightness = 80;
         glowMultiplier = 1;
       }
-      saturation = this.applyParticleColorSaturation(
-        saturation,
-        colorProfile
-      );
-      lightness = this.applyParticleColorLightness(
-        lightness,
-        colorProfile
-      );
-      glowSaturation = this.applyParticleColorSaturation(
-        glowSaturation,
-        colorProfile
-      );
-      glowLightness = this.applyParticleColorLightness(
-        glowLightness,
-        colorProfile
-      );
-      alpha = this.clamp(
-        alpha,
-        0,
-        1
-      );
-      if (!isDeep && particleGlow > 0 && (mouseGlow > 0.08 || (particle.glow ?? 0) > 0.01)) {
-        const glowAlpha = this.clamp(
-          (0.06 + particleGlow + mouseGlow * 0.12 + (particle.glow ?? 0) * 0.13) * depthAlpha * glowMultiplier,
-          0,
-          1
-        );
+      if (!isDeep && (mouseGlow > 0.05 || (particle.glow ?? 0) > 0.01)) {
         const gradient = ctx.createRadialGradient(
           renderPosition.x,
           renderPosition.y,
           0,
           renderPosition.x,
           renderPosition.y,
-          size * (4.2 + particleGlow * 8)
+          size * 4.2
         );
         gradient.addColorStop(
           0,
-          `hsla(${particleHue}, ${glowSaturation}%, ${glowLightness}%, ${glowAlpha})`
+          `hsla(${particle.hue}, ${glowSaturation}%, ${glowLightness}%, ${(0.06 + mouseGlow * 0.12 + (particle.glow ?? 0) * 0.13) * depthAlpha * glowMultiplier})`
         );
         gradient.addColorStop(
           1,
-          `hsla(${particleHue}, ${glowSaturation}%, ${glowLightness}%, 0)`
+          `hsla(${particle.hue}, ${glowSaturation}%, ${glowLightness}%, 0)`
         );
         ctx.beginPath();
         ctx.fillStyle = gradient;
         ctx.arc(
           renderPosition.x,
           renderPosition.y,
-          size * (4.2 + particleGlow * 8),
+          size * 4.2,
           0,
           Math.PI * 2
         );
         ctx.fill();
       }
       ctx.beginPath();
-      ctx.fillStyle = `hsla(${particleHue}, ${saturation}%, ${lightness}%, ${alpha})`;
+      ctx.fillStyle = `hsla(${particle.hue}, ${saturation}%, ${lightness}%, ${alpha})`;
       ctx.arc(
         renderPosition.x,
         renderPosition.y,
@@ -699,303 +385,77 @@ var ParticleSystem = class {
       ctx.fill();
       if (particle.glow !== void 0 && particle.glow > 0) {
         particle.glow -= 2e-3;
-        if (particle.glow < 0) {
+        if (particle.glow < 0)
           particle.glow = 0;
-        }
       }
     }
   }
   drawConnections(ctx, mouse, settings, parallax) {
-    const connectionDistance = settings.connectionDistance;
-    if (connectionDistance <= 0) {
-      return;
-    }
-    const now = performance.now();
-    const mouseGlowEnabled = settings.enableMouseGlow && mouse.isInside === true && this.mouseInfluence > 0.01 && mouse.x >= 0 && mouse.y >= 0;
-    const mouseGlowRadiusSquared = settings.mouseGlowRadius * settings.mouseGlowRadius;
-    const renderPoints = [];
-    const renderPointByIndex = [];
     for (let i = 0; i < this.particles.length; i++) {
-      const particle = this.particles[i];
-      if (particle.kind === "deep") {
-        continue;
-      }
-      const renderPosition = this.getRenderPosition(
-        particle,
-        parallax
-      );
-      const point = {
-        particle,
-        index: i,
-        x: renderPosition.x,
-        y: renderPosition.y,
-        depth: particle.depth ?? 1
-      };
-      renderPoints.push(point);
-      renderPointByIndex[i] = point;
-    }
-    this.debugMetrics.connectionRenderPoints = renderPoints.length;
-    const shouldRebuildCache = this.cachedConnectionPairs.length === 0 || now - this.lastConnectionCacheTime >= this.getConnectionCacheInterval(
-      renderPoints.length,
-      connectionDistance
-    );
-    if (shouldRebuildCache) {
-      this.rebuildConnectionCache(
-        renderPoints,
-        connectionDistance,
-        mouse,
-        settings,
-        mouseGlowEnabled,
-        mouseGlowRadiusSquared
-      );
-      this.lastConnectionCacheTime = now;
-    } else {
-      this.debugMetrics.connectionGridMs = 0;
-      this.debugMetrics.connectionScanMs = 0;
-    }
-    const strokeStart = performance.now();
-    const buckets = /* @__PURE__ */ new Map();
-    let segmentCount = 0;
-    for (const pair of this.cachedConnectionPairs) {
-      const a = renderPointByIndex[pair.aIndex];
-      const b = renderPointByIndex[pair.bIndex];
-      if (!a || !b) {
-        continue;
-      }
-      const depthDifference = Math.abs(a.depth - b.depth);
-      if (depthDifference > 0.42) {
-        continue;
-      }
-      const depthAverage = (a.depth + b.depth) / 2;
-      const dx = a.x - b.x;
-      const dy = a.y - b.y;
-      const distanceSquared = dx * dx + dy * dy;
-      const depthConnectionDistance = connectionDistance * (0.65 + depthAverage * 0.35);
-      const maxDistanceSquared = depthConnectionDistance * depthConnectionDistance;
-      if (distanceSquared >= maxDistanceSquared) {
-        continue;
-      }
-      const distance = Math.sqrt(distanceSquared);
-      const opacity = 1 - distance / depthConnectionDistance;
-      let mouseGlow = 0;
-      if (mouseGlowEnabled) {
-        const midX = (a.x + b.x) / 2;
-        const midY = (a.y + b.y) / 2;
-        const mouseDx = mouse.x - midX;
-        const mouseDy = mouse.y - midY;
-        const mouseDistanceSquared = mouseDx * mouseDx + mouseDy * mouseDy;
-        if (mouseDistanceSquared < mouseGlowRadiusSquared) {
+      for (let j = i + 1; j < this.particles.length; j++) {
+        const a = this.particles[i];
+        const b = this.particles[j];
+        if (a.kind === "deep" || b.kind === "deep")
+          continue;
+        const depthA = a.depth ?? 1;
+        const depthB = b.depth ?? 1;
+        const depthDifference = Math.abs(depthA - depthB);
+        if (depthDifference > 0.42)
+          continue;
+        const depthAverage = (depthA + depthB) / 2;
+        const renderA = this.getRenderPosition(a, parallax);
+        const renderB = this.getRenderPosition(b, parallax);
+        const dx = renderA.x - renderB.x;
+        const dy = renderA.y - renderB.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const depthConnectionDistance = settings.connectionDistance * (0.65 + depthAverage * 0.35);
+        if (distance < depthConnectionDistance) {
+          const opacity = 1 - distance / depthConnectionDistance;
+          const midX = (renderA.x + renderB.x) / 2;
+          const midY = (renderA.y + renderB.y) / 2;
+          const mouseDx = mouse.x - midX;
+          const mouseDy = mouse.y - midY;
           const mouseDistance = Math.sqrt(
-            mouseDistanceSquared
+            mouseDx * mouseDx + mouseDy * mouseDy
           );
-          mouseGlow = 1 - mouseDistance / settings.mouseGlowRadius;
-          mouseGlow *= this.mouseInfluence;
+          let mouseGlow = 0;
+          if (settings.enableMouseGlow && mouse.x >= 0 && mouseDistance < settings.mouseGlowRadius) {
+            mouseGlow = 1 - mouseDistance / settings.mouseGlowRadius;
+          }
+          const depthOpacity = 0.25 + depthAverage * 0.75;
+          const finalOpacity = opacity * (settings.connectionBaseOpacity + mouseGlow * settings.mouseGlowConnectionOpacity) * depthOpacity;
+          ctx.strokeStyle = `rgba(${settings.connectionColor}, ${finalOpacity})`;
+          ctx.lineWidth = (settings.connectionLineWidth + mouseGlow * settings.mouseGlowLineWidth) * (0.45 + depthAverage * 0.55);
+          ctx.beginPath();
+          ctx.moveTo(renderA.x, renderA.y);
+          ctx.lineTo(renderB.x, renderB.y);
+          ctx.stroke();
         }
       }
-      const fadeA = a.particle.connectionAge !== void 0 && a.particle.connectionFadeDuration !== void 0 ? a.particle.connectionAge / a.particle.connectionFadeDuration : 1;
-      const fadeB = b.particle.connectionAge !== void 0 && b.particle.connectionFadeDuration !== void 0 ? b.particle.connectionAge / b.particle.connectionFadeDuration : 1;
-      const connectionFade = Math.min(fadeA, fadeB);
-      const finalOpacity = opacity * (settings.connectionBaseOpacity + mouseGlow * settings.mouseGlowConnectionOpacity) * (0.25 + depthAverage * 0.75) * connectionFade;
-      if (finalOpacity < 0.02) {
-        continue;
-      }
-      const lineWidth = (settings.connectionLineWidth + mouseGlow * settings.mouseGlowLineWidth) * (0.45 + depthAverage * 0.55);
-      const opacityBucket = Math.round(finalOpacity * 20) / 20;
-      const widthBucket = Math.round(lineWidth * 2) / 2;
-      const bucketKey = `${opacityBucket}-${widthBucket}`;
-      let bucket = buckets.get(bucketKey);
-      if (!bucket) {
-        bucket = {
-          opacity: opacityBucket,
-          lineWidth: widthBucket,
-          path: new Path2D(),
-          count: 0
-        };
-        buckets.set(bucketKey, bucket);
-      }
-      bucket.path.moveTo(
-        a.x,
-        a.y
-      );
-      bucket.path.lineTo(
-        b.x,
-        b.y
-      );
-      bucket.count++;
-      segmentCount++;
     }
-    for (const bucket of buckets.values()) {
-      if (bucket.count === 0) {
-        continue;
-      }
-      ctx.strokeStyle = `rgba(${settings.connectionColor}, ${bucket.opacity})`;
-      ctx.lineWidth = bucket.lineWidth;
-      ctx.stroke(bucket.path);
-    }
-    this.debugMetrics.connectionStrokeMs = performance.now() - strokeStart;
-    this.debugMetrics.connectionSegments = segmentCount;
-    this.debugMetrics.connectionBuckets = buckets.size;
   }
-  rebuildConnectionCache(renderPoints, connectionDistance, mouse, settings, mouseGlowEnabled, mouseGlowRadiusSquared) {
-    const gridStart = performance.now();
-    const cellSize = connectionDistance;
-    const grid = /* @__PURE__ */ new Map();
-    for (const point of renderPoints) {
-      const cellX = Math.floor(point.x / cellSize);
-      const cellY = Math.floor(point.y / cellSize);
-      const cellKey = `${cellX},${cellY}`;
-      let cell = grid.get(cellKey);
-      if (!cell) {
-        cell = [];
-        grid.set(cellKey, cell);
-      }
-      cell.push(point);
-    }
-    this.debugMetrics.connectionGridMs = performance.now() - gridStart;
-    const scanStart = performance.now();
-    const maxConnectionsPerParticle = Math.max(
-      1,
-      settings.maxConnectionsPerParticle ?? 4
-    );
-    const newPairs = [];
-    for (const a of renderPoints) {
-      const cellX = Math.floor(a.x / cellSize);
-      const cellY = Math.floor(a.y / cellSize);
-      const bestCandidates = [];
-      for (let offsetX = -1; offsetX <= 1; offsetX++) {
-        for (let offsetY = -1; offsetY <= 1; offsetY++) {
-          const neighborKey = `${cellX + offsetX},${cellY + offsetY}`;
-          const neighbors = grid.get(neighborKey);
-          if (!neighbors) {
-            continue;
-          }
-          for (const b of neighbors) {
-            if (b.index <= a.index) {
-              continue;
-            }
-            const score = this.getConnectionCandidateScore(
-              a,
-              b,
-              connectionDistance,
-              mouse,
-              settings,
-              mouseGlowEnabled,
-              mouseGlowRadiusSquared
-            );
-            if (score <= 0) {
-              continue;
-            }
-            this.addBestConnectionCandidate(
-              bestCandidates,
-              {
-                point: b,
-                score
-              },
-              maxConnectionsPerParticle
-            );
-          }
-        }
-      }
-      for (const candidate of bestCandidates) {
-        newPairs.push({
-          aIndex: a.index,
-          bIndex: candidate.point.index
-        });
-      }
-    }
-    this.cachedConnectionPairs = newPairs;
-    this.debugMetrics.connectionScanMs = performance.now() - scanStart;
-  }
-  getConnectionCacheInterval(renderPointCount, connectionDistance) {
-    if (renderPointCount < 800 && connectionDistance < 220) {
-      return this.connectionCacheIntervalMs;
-    }
-    const particleLoad = Math.max(
-      1,
-      renderPointCount / 1e3
-    );
-    const distanceLoad = Math.max(
-      1,
-      connectionDistance / 160
-    );
-    return this.clamp(
-      this.connectionCacheIntervalMs * particleLoad * distanceLoad,
-      this.connectionCacheIntervalMs,
-      260
-    );
-  }
-  getConnectionCandidateScore(a, b, connectionDistance, mouse, settings, mouseGlowEnabled, mouseGlowRadiusSquared) {
-    const depthDifference = Math.abs(a.depth - b.depth);
-    if (depthDifference > 0.42) {
+  getMouseGlow(particle, mouse, settings, parallax) {
+    if (!settings.enableMouseGlow || mouse.x < 0 || mouse.y < 0) {
       return 0;
     }
-    const depthAverage = (a.depth + b.depth) / 2;
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    const distanceSquared = dx * dx + dy * dy;
-    const depthConnectionDistance = connectionDistance * (0.65 + depthAverage * 0.35);
-    const maxDistanceSquared = depthConnectionDistance * depthConnectionDistance;
-    if (distanceSquared >= maxDistanceSquared) {
+    if (particle.kind === "deep")
       return 0;
-    }
-    const distance = Math.sqrt(distanceSquared);
-    const opacity = 1 - distance / depthConnectionDistance;
-    let mouseGlow = 0;
-    if (mouseGlowEnabled) {
-      const midX = (a.x + b.x) / 2;
-      const midY = (a.y + b.y) / 2;
-      const mouseDx = mouse.x - midX;
-      const mouseDy = mouse.y - midY;
-      const mouseDistanceSquared = mouseDx * mouseDx + mouseDy * mouseDy;
-      if (mouseDistanceSquared < mouseGlowRadiusSquared) {
-        const mouseDistance = Math.sqrt(
-          mouseDistanceSquared
-        );
-        mouseGlow = 1 - mouseDistance / settings.mouseGlowRadius;
-        mouseGlow *= this.mouseInfluence;
-      }
-    }
-    return opacity * (0.7 + depthAverage * 0.3) + mouseGlow * 0.25;
-  }
-  addBestConnectionCandidate(candidates, candidate, maxCandidates) {
-    if (candidates.length < maxCandidates) {
-      candidates.push(candidate);
-      return;
-    }
-    let weakestIndex = 0;
-    let weakestScore = candidates[0].score;
-    for (let i = 1; i < candidates.length; i++) {
-      if (candidates[i].score < weakestScore) {
-        weakestScore = candidates[i].score;
-        weakestIndex = i;
-      }
-    }
-    if (candidate.score > weakestScore) {
-      candidates[weakestIndex] = candidate;
-    }
-  }
-  getMouseGlow(particle, mouse, settings, renderPosition) {
-    if (!settings.enableMouseGlow || mouse.x < 0 || mouse.y < 0 || particle.kind === "deep") {
-      return 0;
-    }
+    const depth = particle.depth ?? 1;
+    const renderPosition = this.getRenderPosition(particle, parallax);
     const dx = mouse.x - renderPosition.x;
     const dy = mouse.y - renderPosition.y;
-    const distanceSquared = dx * dx + dy * dy;
-    const radiusSquared = settings.mouseGlowRadius * settings.mouseGlowRadius;
-    if (distanceSquared > radiusSquared) {
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > settings.mouseGlowRadius)
       return 0;
-    }
-    const distance = Math.sqrt(distanceSquared);
     const glow = 1 - distance / settings.mouseGlowRadius;
-    const depth = particle.depth ?? 1;
     return glow * glow * (0.35 + depth * 0.65);
   }
   getParallaxOffset(ctx, mouse, settings) {
     if (!settings.enableParallax || mouse.x < 0 || mouse.y < 0) {
       return { x: 0, y: 0 };
     }
-    const centerX = ctx.canvas.clientWidth / 2;
-    const centerY = ctx.canvas.clientHeight / 2;
+    const centerX = ctx.canvas.width / 2;
+    const centerY = ctx.canvas.height / 2;
     if (centerX <= 0 || centerY <= 0) {
       return { x: 0, y: 0 };
     }
@@ -1043,92 +503,6 @@ var ParticleSystem = class {
     }
     return this.random(0.8, 1);
   }
-  getParticleHue(settings) {
-    const color = settings.particleColor;
-    if (/^#[0-9a-fA-F]{6}$/.test(color)) {
-      return this.hexToHsl(color).hue;
-    }
-    return this.random(
-      settings.starHueMin,
-      settings.starHueMax
-    );
-  }
-  getRenderParticleHue(particle, settings) {
-    const color = settings.particleColor;
-    if (particle.kind !== "deep" && /^#[0-9a-fA-F]{6}$/.test(color)) {
-      return this.hexToHsl(color).hue;
-    }
-    return particle.hue;
-  }
-  getBaseSpeedMultiplier(settings) {
-    const defaultBaseSpeed = 0.22;
-    return this.clamp(
-      settings.baseSpeed / defaultBaseSpeed,
-      0,
-      5
-    );
-  }
-  getParticleColorProfile(settings) {
-    const color = settings.particleColor;
-    if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
-      return {
-        saturation: 100,
-        lightness: 60
-      };
-    }
-    const hsl = this.hexToHsl(color);
-    return {
-      saturation: hsl.saturation,
-      lightness: hsl.lightness
-    };
-  }
-  applyParticleColorSaturation(baseSaturation, profile) {
-    const saturationFactor = 0.35 + profile.saturation / 100 * 0.75;
-    return this.clamp(
-      baseSaturation * saturationFactor,
-      0,
-      100
-    );
-  }
-  applyParticleColorLightness(baseLightness, profile) {
-    const lightnessOffset = (profile.lightness - 60) * 0.35;
-    return this.clamp(
-      baseLightness + lightnessOffset,
-      12,
-      94
-    );
-  }
-  hexToHsl(hex) {
-    const cleanHex = hex.replace("#", "");
-    const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
-    const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
-    const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const delta = max - min;
-    const lightness = (max + min) / 2;
-    if (delta === 0) {
-      return {
-        hue: 0,
-        saturation: 0,
-        lightness: Math.round(lightness * 100)
-      };
-    }
-    let hue = 0;
-    if (max === r) {
-      hue = (g - b) / delta % 6;
-    } else if (max === g) {
-      hue = (b - r) / delta + 2;
-    } else {
-      hue = (r - g) / delta + 4;
-    }
-    const saturation = delta / (1 - Math.abs(2 * lightness - 1));
-    return {
-      hue: Math.round((hue * 60 + 360) % 360),
-      saturation: Math.round(saturation * 100),
-      lightness: Math.round(lightness * 100)
-    };
-  }
   shouldCreateDeepParticle() {
     return Math.random() < 0.45;
   }
@@ -1140,1028 +514,21 @@ var ParticleSystem = class {
   random(min, max) {
     return min + Math.random() * (max - min);
   }
-  clamp(value, min, max) {
-    return Math.max(
-      min,
-      Math.min(max, value)
-    );
-  }
-  invalidateConnectionCache() {
-    this.cachedConnectionPairs = [];
-    this.lastConnectionCacheTime = 0;
-  }
-  handleResize(width, height) {
-    if (this.lastWidth <= 0 || this.lastHeight <= 0) {
-      this.lastWidth = width;
-      this.lastHeight = height;
-      return;
-    }
-    if (width === this.lastWidth && height === this.lastHeight) {
-      return;
-    }
-    const scaleX = width / this.lastWidth;
-    const scaleY = height / this.lastHeight;
-    for (const particle of this.particles) {
-      particle.x *= scaleX;
-      particle.y *= scaleY;
-      if (particle.gravityX !== void 0) {
-        particle.gravityX *= scaleX;
-      }
-      if (particle.gravityY !== void 0) {
-        particle.gravityY *= scaleY;
-      }
-    }
-    for (const cluster of this.clusterPoints) {
-      cluster.x *= scaleX;
-      cluster.y *= scaleY;
-    }
-    this.lastWidth = width;
-    this.lastHeight = height;
-    this.resizeGraceTime = this.resizeGraceDuration;
-    this.invalidateConnectionCache();
-  }
 };
 
-// src/util/math.ts
-function lerp(current, target, speed) {
-  return current + (target - current) * speed;
-}
-function clamp(value, min, max) {
-  return Math.max(
-    min,
-    Math.min(max, value)
-  );
-}
-
-// src/util/random.ts
-function randomFloat(min, max) {
-  return min + Math.random() * (max - min);
-}
-function randomChance(chance) {
-  return Math.random() < chance;
-}
-
-// src/util/canvas.ts
-function createRadialGlow(ctx, x, y, radius, innerColor, outerColor, options) {
-  const innerX = options?.innerX ?? x;
-  const innerY = options?.innerY ?? y;
-  const innerRadius = options?.innerRadius ?? 0;
-  const outerX = options?.outerX ?? x;
-  const outerY = options?.outerY ?? y;
-  const gradient = ctx.createRadialGradient(
-    innerX,
-    innerY,
-    innerRadius,
-    outerX,
-    outerY,
-    radius
-  );
-  if (options?.colorStops !== void 0) {
-    for (const stop of options.colorStops) {
-      gradient.addColorStop(
-        stop.offset,
-        stop.color
-      );
-    }
-    return gradient;
-  }
-  gradient.addColorStop(0, innerColor);
-  gradient.addColorStop(1, outerColor);
-  return gradient;
-}
-function createLinearFade(ctx, startX, startY, endX, endY, startColor, endColor) {
-  const gradient = ctx.createLinearGradient(
-    startX,
-    startY,
-    endX,
-    endY
-  );
-  gradient.addColorStop(0, startColor);
-  gradient.addColorStop(1, endColor);
-  return gradient;
-}
-function drawFilledCircle(ctx, x, y, radius, fillStyle) {
-  ctx.beginPath();
-  ctx.fillStyle = fillStyle;
-  ctx.arc(
-    x,
-    y,
-    radius,
-    0,
-    Math.PI * 2
-  );
-  ctx.fill();
-}
-
-// src/render/cosmicObjects.ts
-var CosmicObjects = class {
-  constructor() {
-    this.galaxies = [];
-    this.planets = [];
-    this.zoom = 1;
-    this.targetZoom = 1;
-  }
-  create(width, height) {
-    this.galaxies = [];
-    this.planets = [];
-    this.createGalaxies(width, height);
-    this.createPlanets(width, height);
-  }
-  handleWheel(deltaY) {
-    const direction = deltaY < 0 ? 1 : -1;
-    this.targetZoom = clamp(
-      this.targetZoom + direction * 0.06,
-      0.78,
-      1.45
-    );
-  }
-  update(delta) {
-    this.zoom += (this.targetZoom - this.zoom) * 0.08;
-    for (const galaxy of this.galaxies) {
-      galaxy.rotation += galaxy.rotationSpeed * delta;
-    }
-    for (const planet of this.planets) {
-      planet.rotation += planet.rotationSpeed * delta;
-    }
-  }
-  draw(ctx, time, mouse, enableParallax) {
-    for (const galaxy of this.galaxies) {
-      this.drawGalaxy(
-        ctx,
-        galaxy,
-        mouse,
-        enableParallax
-      );
-    }
-    for (const planet of this.planets) {
-      this.drawPlanet(
-        ctx,
-        planet,
-        time,
-        mouse,
-        enableParallax
-      );
-    }
-  }
-  applySettings(_settings) {
-  }
-  createGalaxies(width, height) {
-    const amount = Math.floor(
-      randomFloat(2, 4)
-    );
-    for (let i = 0; i < amount; i++) {
-      this.galaxies.push({
-        x: randomFloat(
-          width * 0.1,
-          width * 0.9
-        ),
-        y: randomFloat(
-          height * 0.1,
-          height * 0.9
-        ),
-        radius: randomFloat(120, 210),
-        hue: randomFloat(205, 275),
-        alpha: randomFloat(0.09, 0.16),
-        depth: randomFloat(0.06, 0.22),
-        rotation: randomFloat(
-          0,
-          Math.PI * 2
-        ),
-        rotationSpeed: randomFloat(
-          -35e-6,
-          35e-6
-        )
-      });
-    }
-  }
-  createPlanets(width, height) {
-    const amount = Math.floor(
-      randomFloat(2, 5)
-    );
-    for (let i = 0; i < amount; i++) {
-      this.planets.push({
-        x: randomFloat(
-          width * 0.12,
-          width * 0.88
-        ),
-        y: randomFloat(
-          height * 0.12,
-          height * 0.88
-        ),
-        radius: randomFloat(20, 42),
-        hue: randomFloat(185, 295),
-        alpha: randomFloat(0.34, 0.52),
-        depth: randomFloat(0.24, 0.52),
-        rotation: randomFloat(
-          0,
-          Math.PI * 2
-        ),
-        rotationSpeed: randomFloat(
-          -8e-5,
-          8e-5
-        ),
-        hasRing: randomChance(0.5)
-      });
-    }
-  }
-  drawGalaxy(ctx, galaxy, mouse, enableParallax) {
-    const position = this.getRenderPosition(
-      ctx,
-      galaxy,
-      mouse,
-      enableParallax
-    );
-    const scale = this.getZoomScale(galaxy);
-    const radius = galaxy.radius * scale;
-    ctx.save();
-    ctx.translate(
-      position.x,
-      position.y
-    );
-    ctx.rotate(galaxy.rotation);
-    ctx.scale(1, 0.34);
-    const gradient = createRadialGlow(
-      ctx,
-      0,
-      0,
-      radius,
-      `hsla(${galaxy.hue}, 85%, 76%, ${galaxy.alpha})`,
-      `hsla(${galaxy.hue}, 80%, 50%, 0)`,
-      {
-        colorStops: [
-          {
-            offset: 0,
-            color: `hsla(${galaxy.hue}, 85%, 76%, ${galaxy.alpha})`
-          },
-          {
-            offset: 0.28,
-            color: `hsla(${galaxy.hue + 18}, 78%, 62%, ${galaxy.alpha * 0.62})`
-          },
-          {
-            offset: 0.65,
-            color: `hsla(${galaxy.hue - 20}, 70%, 45%, ${galaxy.alpha * 0.22})`
-          },
-          {
-            offset: 1,
-            color: `hsla(${galaxy.hue}, 80%, 50%, 0)`
-          }
-        ]
-      }
-    );
-    drawFilledCircle(
-      ctx,
-      0,
-      0,
-      radius,
-      gradient
-    );
-    ctx.restore();
-  }
-  drawPlanet(ctx, planet, time, mouse, enableParallax) {
-    const position = this.getRenderPosition(
-      ctx,
-      planet,
-      mouse,
-      enableParallax
-    );
-    const scale = this.getZoomScale(planet);
-    const radius = planet.radius * scale;
-    const pulse = 0.9 + Math.sin(
-      time * 45e-5 + planet.radius
-    ) * 0.1;
-    ctx.save();
-    ctx.translate(
-      position.x,
-      position.y
-    );
-    ctx.rotate(planet.rotation);
-    if (planet.hasRing) {
-      ctx.save();
-      ctx.rotate(-0.4);
-      ctx.beginPath();
-      ctx.strokeStyle = `hsla(${planet.hue}, 58%, 76%, ${planet.alpha * 0.9})`;
-      ctx.lineWidth = 1.2;
-      ctx.ellipse(
-        0,
-        0,
-        radius * 1.9,
-        radius * 0.55,
-        0,
-        0,
-        Math.PI * 2
-      );
-      ctx.stroke();
-      ctx.restore();
-    }
-    const glow = createRadialGlow(
-      ctx,
-      0,
-      0,
-      radius * 3.4,
-      `hsla(${planet.hue}, 82%, 72%, ${planet.alpha * 0.32 * pulse})`,
-      `hsla(${planet.hue}, 80%, 70%, 0)`,
-      {
-        innerRadius: radius * 0.2
-      }
-    );
-    drawFilledCircle(
-      ctx,
-      0,
-      0,
-      radius * 3.4,
-      glow
-    );
-    const body = createRadialGlow(
-      ctx,
-      0,
-      0,
-      radius,
-      `hsla(${planet.hue + 14}, 72%, 78%, ${planet.alpha})`,
-      `hsla(${planet.hue - 24}, 62%, 24%, ${planet.alpha * 0.8})`,
-      {
-        innerX: -radius * 0.35,
-        innerY: -radius * 0.35,
-        innerRadius: radius * 0.1,
-        colorStops: [
-          {
-            offset: 0,
-            color: `hsla(${planet.hue + 14}, 72%, 78%, ${planet.alpha})`
-          },
-          {
-            offset: 0.55,
-            color: `hsla(${planet.hue}, 64%, 50%, ${planet.alpha * 0.95})`
-          },
-          {
-            offset: 1,
-            color: `hsla(${planet.hue - 24}, 62%, 24%, ${planet.alpha * 0.8})`
-          }
-        ]
-      }
-    );
-    drawFilledCircle(
-      ctx,
-      0,
-      0,
-      radius,
-      body
-    );
-    drawFilledCircle(
-      ctx,
-      radius * 0.28,
-      radius * 0.12,
-      radius * 0.95,
-      `rgba(0, 0, 0, ${planet.alpha * 0.42})`
-    );
-    ctx.restore();
-  }
-  getRenderPosition(ctx, entity, mouse, enableParallax) {
-    const centerX = ctx.canvas.clientWidth / 2;
-    const centerY = ctx.canvas.clientHeight / 2;
-    const zoomInfluence = 0.18 + entity.depth * 0.65;
-    const zoomedX = centerX + (entity.x - centerX) * (1 + (this.zoom - 1) * zoomInfluence);
-    const zoomedY = centerY + (entity.y - centerY) * (1 + (this.zoom - 1) * zoomInfluence);
-    if (!enableParallax || mouse.x < 0 || mouse.y < 0) {
-      return {
-        x: zoomedX,
-        y: zoomedY
-      };
-    }
-    const offsetX = (mouse.x - centerX) / centerX;
-    const offsetY = (mouse.y - centerY) / centerY;
-    const parallaxStrength = 32 * (1 - entity.depth);
-    return {
-      x: zoomedX - offsetX * parallaxStrength,
-      y: zoomedY - offsetY * parallaxStrength
-    };
-  }
-  getZoomScale(entity) {
-    const zoomInfluence = 0.22 + entity.depth * 0.55;
-    return 1 + (this.zoom - 1) * zoomInfluence;
-  }
-};
-
-// src/render/backgroundRenderer.ts
-var BackgroundRenderer = class {
-  constructor() {
-    this.graphView = null;
-    this.root = null;
-    this.farCanvas = null;
-    this.farCtx = null;
-    this.nearCanvas = null;
-    this.nearCtx = null;
-    this.starsFar = [];
-    this.starsNear = [];
-    this.width = 0;
-    this.height = 0;
-    this.dpr = 1;
-    this.parallaxX = 0;
-    this.parallaxY = 0;
-    this.targetParallaxX = 0;
-    this.targetParallaxY = 0;
-    this.farVisibility = 0.45;
-    this.nearVisibility = 1;
-    this.farLayerDirty = true;
-    this.settings = null;
-    this.lastFarDrawTime = 0;
-    this.farFrameInterval = 1e3 / 12;
-    this.lastNearDrawTime = 0;
-    this.nearFrameInterval = 1e3 / 20;
-  }
-  setContainer(container, settings) {
-    const isNewContainer = this.graphView !== container;
-    this.graphView = container;
-    this.graphView.style.position = "relative";
-    this.graphView.style.background = "#00020a";
-    if (isNewContainer) {
-      this.destroyCanvasOnly();
-    }
-    this.ensureRoot();
-    this.ensureCanvasLayers();
-    if (isNewContainer || this.starsFar.length === 0 && this.starsNear.length === 0) {
-      this.createStars(settings);
-    }
-    this.resize();
-    this.applySettings(settings);
-  }
-  regenerate(settings) {
-    if (!this.graphView) {
-      return;
-    }
-    this.createStars(settings);
-    this.resize();
-    this.farLayerDirty = true;
-  }
-  update(enabled, enableParallax) {
-    if (!this.graphView || !this.graphView.isConnected || !this.farCtx || !this.nearCtx) {
-      return;
-    }
-    this.setVisible(enabled);
-    if (!enabled) {
-      return;
-    }
-    const rect = this.graphView.getBoundingClientRect();
-    if (rect.width < 10 || rect.height < 10) {
-      return;
-    }
-    this.resize();
-    if (!enableParallax) {
-      this.parallaxX = lerp(
-        this.parallaxX,
-        0,
-        0.08
-      );
-      this.parallaxY = lerp(
-        this.parallaxY,
-        0,
-        0.08
-      );
-    } else {
-      this.parallaxX = lerp(
-        this.parallaxX,
-        this.targetParallaxX,
-        0.04
-      );
-      this.parallaxY = lerp(
-        this.parallaxY,
-        this.targetParallaxY,
-        0.04
-      );
-    }
-    this.draw();
-  }
-  setVisible(enabled) {
-    if (!this.root) {
-      return;
-    }
-    this.root.style.display = enabled ? "" : "none";
-  }
-  setParallax(x, y) {
-    this.targetParallaxX = clamp(
-      x,
-      -50,
-      50
-    );
-    this.targetParallaxY = clamp(
-      y,
-      -50,
-      50
-    );
-  }
-  applySettings(settings) {
-    const shouldRegenerate = !this.settings && this.starsFar.length === 0 && this.starsNear.length === 0 || this.settings !== null && (this.settings.backgroundFarStarCount !== settings.backgroundFarStarCount || this.settings.backgroundNearStarCount !== settings.backgroundNearStarCount);
-    this.settings = {
-      ...settings
-    };
-    if (shouldRegenerate) {
-      this.createStars(settings);
-    }
-    this.farVisibility = 0.45;
-    this.nearVisibility = 1;
-    this.farLayerDirty = true;
-  }
-  destroy() {
-    this.destroyCanvasOnly();
-    this.graphView = null;
-  }
-  ensureRoot() {
-    if (!this.graphView || this.root) {
-      return;
-    }
-    const existing = this.graphView.querySelector(
-      ".cosmos-background-root"
-    );
-    if (existing) {
-      this.root = existing;
-      this.farCanvas = existing.querySelector(
-        ".cosmos-background-far-canvas"
-      );
-      this.nearCanvas = existing.querySelector(
-        ".cosmos-background-near-canvas"
-      );
-      this.farCtx = this.farCanvas?.getContext("2d") ?? null;
-      this.nearCtx = this.nearCanvas?.getContext("2d") ?? null;
-      return;
-    }
-    const root = document.createElement(
-      "div"
-    );
-    root.className = "cosmos-background-root";
-    root.style.position = "absolute";
-    root.style.inset = "0";
-    root.style.pointerEvents = "none";
-    root.style.overflow = "hidden";
-    root.style.zIndex = "1";
-    this.graphView.prepend(
-      root
-    );
-    this.root = root;
-  }
-  ensureCanvasLayers() {
-    if (!this.root) {
-      return;
-    }
-    if (!this.farCanvas) {
-      const farCanvas = this.createCanvas(
-        "cosmos-background-far-canvas",
-        "1"
-      );
-      this.root.appendChild(
-        farCanvas
-      );
-      this.farCanvas = farCanvas;
-      this.farCtx = farCanvas.getContext("2d");
-    }
-    if (!this.nearCanvas) {
-      const nearCanvas = this.createCanvas(
-        "cosmos-background-near-canvas",
-        "2"
-      );
-      this.root.appendChild(
-        nearCanvas
-      );
-      this.nearCanvas = nearCanvas;
-      this.nearCtx = nearCanvas.getContext("2d");
-    }
-  }
-  createCanvas(className, zIndex) {
-    const canvas = document.createElement(
-      "canvas"
-    );
-    canvas.className = className;
-    canvas.style.position = "absolute";
-    canvas.style.inset = "0";
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    canvas.style.pointerEvents = "none";
-    canvas.style.zIndex = zIndex;
-    return canvas;
-  }
-  resize() {
-    if (!this.graphView || !this.farCanvas || !this.nearCanvas) {
-      return;
-    }
-    const rect = this.graphView.getBoundingClientRect();
-    const width = Math.max(
-      1,
-      Math.floor(rect.width)
-    );
-    const height = Math.max(
-      1,
-      Math.floor(rect.height)
-    );
-    const dpr = Math.max(
-      1,
-      window.devicePixelRatio || 1
-    );
-    if (width === this.width && height === this.height && dpr === this.dpr) {
-      return;
-    }
-    this.width = width;
-    this.height = height;
-    this.dpr = dpr;
-    this.farLayerDirty = true;
-    this.resizeCanvas(
-      this.farCanvas,
-      this.farCtx,
-      width,
-      height,
-      dpr
-    );
-    this.resizeCanvas(
-      this.nearCanvas,
-      this.nearCtx,
-      width,
-      height,
-      dpr
-    );
-  }
-  resizeCanvas(canvas, ctx, width, height, dpr) {
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    ctx?.setTransform(
-      dpr,
-      0,
-      0,
-      dpr,
-      0,
-      0
-    );
-  }
-  createStars(settings) {
-    this.starsFar = this.generateStars(
-      settings.backgroundFarStarCount,
-      {
-        minDepth: 0.15,
-        maxDepth: 0.45
-      }
-    );
-    this.starsNear = this.generateStars(
-      settings.backgroundNearStarCount,
-      {
-        minDepth: 0.5,
-        maxDepth: 1
-      }
-    );
-    this.farLayerDirty = true;
-  }
-  generateStars(count, config) {
-    const stars = [];
-    for (let i = 0; i < count; i++) {
-      stars.push({
-        x: randomFloat(
-          0,
-          1
-        ),
-        y: randomFloat(
-          0,
-          1
-        ),
-        sizeRatio: randomFloat(0, 1),
-        depth: randomFloat(
-          config.minDepth,
-          config.maxDepth
-        ),
-        opacityRatio: randomFloat(0, 1),
-        hueRatio: randomFloat(0, 1),
-        pulseRoll: randomFloat(0, 1),
-        twinkleOffset: randomFloat(
-          0,
-          Math.PI * 2
-        ),
-        twinkleSpeed: randomFloat(
-          0.25,
-          0.8
-        )
-      });
-    }
-    return stars;
-  }
-  draw() {
-    if (!this.farCtx || !this.nearCtx) {
-      return;
-    }
-    const now = performance.now();
-    const time = now * 1e-3;
-    const settings = this.settings;
-    if (!settings) {
-      return;
-    }
-    if (this.farLayerDirty || now - this.lastFarDrawTime >= this.farFrameInterval) {
-      this.lastFarDrawTime = now;
-      this.clearLayer(
-        this.farCtx
-      );
-      this.drawStars(
-        this.farCtx,
-        this.starsFar,
-        this.parallaxX * settings.backgroundFarParallax,
-        this.parallaxY * settings.backgroundFarParallax,
-        this.farVisibility,
-        false,
-        time,
-        settings
-      );
-      this.farLayerDirty = false;
-    }
-    if (now - this.lastNearDrawTime < this.nearFrameInterval) {
-      return;
-    }
-    this.lastNearDrawTime = now;
-    this.clearLayer(
-      this.nearCtx
-    );
-    this.drawStars(
-      this.nearCtx,
-      this.starsNear,
-      this.parallaxX * settings.backgroundNearParallax,
-      this.parallaxY * settings.backgroundNearParallax,
-      this.nearVisibility,
-      true,
-      time,
-      settings
-    );
-  }
-  clearLayer(ctx) {
-    ctx.clearRect(
-      0,
-      0,
-      this.width,
-      this.height
-    );
-  }
-  drawStars(ctx, stars, parallaxX, parallaxY, visibility, drawSoftGlow, time, settings) {
-    const baseMargin = drawSoftGlow ? 80 : 24;
-    for (const star of stars) {
-      const size = this.getStarSize(
-        star,
-        drawSoftGlow,
-        settings
-      );
-      const twinkle = star.pulseRoll <= settings.backgroundPulseChance ? Math.sin(
-        time * star.twinkleSpeed + star.twinkleOffset
-      ) * 0.035 : 0;
-      const opacity = clamp(
-        (this.getStarOpacity(
-          star,
-          drawSoftGlow,
-          settings
-        ) + twinkle) * visibility,
-        0,
-        1
-      );
-      if (opacity <= 0.01) {
-        continue;
-      }
-      const x = star.x * this.width + parallaxX * star.depth + this.getStarDriftX(
-        star,
-        drawSoftGlow,
-        time,
-        settings
-      );
-      const y = star.y * this.height + parallaxY * star.depth + this.getStarDriftY(
-        star,
-        drawSoftGlow,
-        time,
-        settings
-      );
-      const visualRadius = drawSoftGlow ? size * 2.2 : size;
-      const margin = baseMargin + visualRadius;
-      if (x + visualRadius < -margin || x - visualRadius > this.width + margin || y + visualRadius < -margin || y - visualRadius > this.height + margin) {
-        continue;
-      }
-      this.drawStar(
-        ctx,
-        x,
-        y,
-        size,
-        opacity,
-        this.getStarColor(
-          star,
-          settings
-        ),
-        drawSoftGlow
-      );
-    }
-  }
-  getStarDriftX(star, isNearLayer, time, settings) {
-    const duration = isNearLayer ? settings.backgroundNearDriftSeconds : settings.backgroundFarDriftSeconds;
-    const safeDuration = Math.max(1, duration);
-    return Math.cos(
-      time / safeDuration * Math.PI * 2 + star.twinkleOffset
-    ) * 12 * star.depth;
-  }
-  getStarDriftY(star, isNearLayer, time, settings) {
-    const duration = isNearLayer ? settings.backgroundNearDriftSeconds : settings.backgroundFarDriftSeconds;
-    const safeDuration = Math.max(1, duration);
-    return Math.sin(
-      time / safeDuration * Math.PI * 2 + star.twinkleOffset
-    ) * 7 * star.depth;
-  }
-  getStarSize(star, isNearLayer, settings) {
-    const minSize = isNearLayer ? settings.backgroundNearStarMinSize : settings.backgroundFarStarMinSize;
-    const maxSize = isNearLayer ? settings.backgroundNearStarMaxSize : settings.backgroundFarStarMaxSize;
-    const safeMin = Math.max(0.05, Math.min(minSize, maxSize));
-    const safeMax = Math.max(safeMin, Math.max(minSize, maxSize));
-    return safeMin + (safeMax - safeMin) * star.sizeRatio;
-  }
-  getStarOpacity(star, isNearLayer, settings) {
-    const safeMin = clamp(
-      Math.min(
-        settings.backgroundStarMinAlpha,
-        settings.backgroundStarMaxAlpha
-      ),
-      0,
-      1
-    );
-    const safeMax = clamp(
-      Math.max(
-        settings.backgroundStarMinAlpha,
-        settings.backgroundStarMaxAlpha
-      ),
-      safeMin,
-      1
-    );
-    const layerMultiplier = isNearLayer ? 0.72 : 0.32;
-    return (safeMin + (safeMax - safeMin) * star.opacityRatio) * layerMultiplier;
-  }
-  getStarColor(star, settings) {
-    const hueMin = settings.backgroundStarHueMin;
-    const hueMax = settings.backgroundStarHueMax;
-    const hue = hueMin + (hueMax - hueMin) * star.hueRatio;
-    return `hsl(${hue}, 85%, 86%)`;
-  }
-  drawStar(ctx, x, y, size, opacity, color, drawSoftGlow) {
-    ctx.globalAlpha = opacity;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(
-      x,
-      y,
-      size,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-    if (drawSoftGlow) {
-      ctx.globalAlpha = opacity * 0.16;
-      ctx.beginPath();
-      ctx.arc(
-        x,
-        y,
-        size * 2.1,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-    }
-  }
-  destroyCanvasOnly() {
-    this.farCanvas?.remove();
-    this.nearCanvas?.remove();
-    this.root?.remove();
-    this.root = null;
-    this.farCanvas = null;
-    this.farCtx = null;
-    this.nearCanvas = null;
-    this.nearCtx = null;
-    this.starsFar = [];
-    this.starsNear = [];
-    this.width = 0;
-    this.height = 0;
-    this.farLayerDirty = true;
-    this.lastNearDrawTime = 0;
-    this.lastFarDrawTime = 0;
-  }
-};
-
-// src/render/canvasLayer.ts
-var COSMOS_CANVAS_CLASS = "cosmos-graph-canvas";
-var LEGACY_CANVAS_CLASS = "cosmos-animation-canvas";
-var CanvasLayer = class {
-  constructor() {
-    this.canvas = null;
-    this.ctx = null;
-  }
-  attach(graphView) {
-    this.removeLegacyCanvas(graphView);
-    let canvas = graphView.querySelector(
-      `.${COSMOS_CANVAS_CLASS}`
-    );
-    if (!canvas) {
-      canvas = document.createElement(
-        "canvas"
-      );
-      canvas.className = COSMOS_CANVAS_CLASS;
-      graphView.appendChild(canvas);
-    }
-    this.applyCanvasStyles(canvas);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      return false;
-    }
-    this.canvas = canvas;
-    this.ctx = ctx;
-    return true;
-  }
-  resize(graphView) {
-    if (!this.canvas || !this.ctx) {
-      return false;
-    }
-    const rect = graphView.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-      return false;
-    }
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.floor(rect.width * dpr);
-    this.canvas.height = Math.floor(rect.height * dpr);
-    this.canvas.style.width = `${rect.width}px`;
-    this.canvas.style.height = `${rect.height}px`;
-    this.ctx.setTransform(
-      dpr,
-      0,
-      0,
-      dpr,
-      0,
-      0
-    );
-    return true;
-  }
-  clear() {
-    if (!this.canvas || !this.ctx) {
-      return;
-    }
-    this.ctx.clearRect(
-      0,
-      0,
-      this.canvas.clientWidth,
-      this.canvas.clientHeight
-    );
-  }
-  getCanvas() {
-    return this.canvas;
-  }
-  getContext() {
-    return this.ctx;
-  }
-  isConnected() {
-    return this.canvas?.isConnected ?? false;
-  }
-  getWidth() {
-    return this.canvas?.clientWidth ?? 0;
-  }
-  getHeight() {
-    return this.canvas?.clientHeight ?? 0;
-  }
-  destroy() {
-    this.canvas?.remove();
-    this.canvas = null;
-    this.ctx = null;
-  }
-  static cleanupAll() {
-    document.querySelectorAll(
-      [
-        `.${COSMOS_CANVAS_CLASS}`,
-        `.${LEGACY_CANVAS_CLASS}`
-      ].join(", ")
-    ).forEach((element) => {
-      element.remove();
-    });
-  }
-  applyCanvasStyles(canvas) {
-    canvas.style.position = "absolute";
-    canvas.style.inset = "0";
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    canvas.style.pointerEvents = "none";
-    canvas.style.zIndex = "2";
-    canvas.style.opacity = "1";
-    canvas.style.mixBlendMode = "screen";
-    canvas.style.overflow = "hidden";
-  }
-  removeLegacyCanvas(graphView) {
-    graphView.querySelectorAll(
-      `.${LEGACY_CANVAS_CLASS}`
-    ).forEach((element) => {
-      element.remove();
-    });
-  }
-};
-
-// src/effects/shootingStars.ts
+// src/render/shootingStars.ts
 var ShootingStars = class {
   constructor() {
     this.stars = [];
     this.nextShootingStar = 0;
   }
   scheduleNext(time) {
-    this.nextShootingStar = time + randomFloat(2500, 6500);
+    this.nextShootingStar = time + this.random(2500, 6500);
   }
   update(delta, time, width, height, enabled) {
     if (enabled && time > this.nextShootingStar) {
       this.create(width, height);
-      this.nextShootingStar = time + randomFloat(3500, 9e3);
+      this.nextShootingStar = time + this.random(3500, 9e3);
     }
     this.stars = this.stars.filter((star) => {
       star.x += star.vx * (delta / 1e3);
@@ -2172,21 +539,17 @@ var ShootingStars = class {
   }
   draw(ctx) {
     for (const star of this.stars) {
-      const alpha = Math.max(
-        star.life / star.maxLife,
-        0
-      );
+      const alpha = Math.max(star.life / star.maxLife, 0);
       const endX = star.x - star.vx * 0.08;
       const endY = star.y - star.vy * 0.08;
-      const gradient = createLinearFade(
-        ctx,
+      const gradient = ctx.createLinearGradient(
         star.x,
         star.y,
         endX,
-        endY,
-        `rgba(255,255,255,${alpha})`,
-        "rgba(255,255,255,0)"
+        endY
       );
+      gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
       ctx.strokeStyle = gradient;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -2198,23 +561,23 @@ var ShootingStars = class {
   clear() {
     this.stars = [];
   }
-  getStarCount() {
-    return this.stars.length;
-  }
   create(width, height) {
     const fromLeft = Math.random() > 0.5;
     this.stars.push({
       x: fromLeft ? -100 : width + 100,
       y: Math.random() * height * 0.55,
-      vx: fromLeft ? randomFloat(550, 950) : -randomFloat(550, 950),
-      vy: randomFloat(160, 360),
-      life: randomFloat(700, 1300),
+      vx: fromLeft ? this.random(550, 950) : -this.random(550, 950),
+      vy: this.random(160, 360),
+      life: this.random(700, 1300),
       maxLife: 1300
     });
   }
+  random(min, max) {
+    return min + Math.random() * (max - min);
+  }
 };
 
-// src/effects/interactionEffects.ts
+// src/render/interactionEffects.ts
 var InteractionEffects = class {
   constructor(burstSystem) {
     this.burstSystem = burstSystem;
@@ -2233,7 +596,7 @@ var InteractionEffects = class {
       this.burstRechargeProgress = burstCooldownMs;
     }
   }
-  handleClick(x, y, canvasWidth, canvasHeight, clickEffectMode, settings) {
+  handleClick(x, y, canvasWidth, canvasHeight, clickEffectMode, particleLimit) {
     if (clickEffectMode === "none") {
       return;
     }
@@ -2243,30 +606,20 @@ var InteractionEffects = class {
     this.burstCharges--;
     this.burstRechargeProgress = 0;
     if (clickEffectMode === "radial") {
-      this.burstSystem.createRadialBurst(
-        x,
-        y,
-        settings
-      );
+      this.burstSystem.createRadialBurst(x, y);
     }
     if (clickEffectMode === "directional") {
-      this.burstSystem.createDirectionalBurst(
-        x,
-        y,
-        settings.directionalAngle,
-        settings
-      );
+      const centerX = canvasWidth / 2;
+      const centerY = canvasHeight / 2;
+      const dx = x - centerX;
+      const dy = y - centerY;
+      const angle = Math.atan2(dy, dx);
+      this.burstSystem.createDirectionalBurst(x, y, angle);
     }
     if (clickEffectMode === "gravity") {
-      this.burstSystem.createGravityBurst(
-        x,
-        y,
-        settings
-      );
+      this.burstSystem.createGravityBurst(x, y);
     }
-    this.burstSystem.limitParticles(
-      settings.burstParticleLimit
-    );
+    this.burstSystem.limitParticles(particleLimit);
   }
   getBurstCooldownProgress(burstCooldownMs) {
     if (this.burstCharges > 0) {
@@ -2282,95 +635,116 @@ var InteractionEffects = class {
   }
 };
 
-// src/effects/burstSystem.ts
+// src/render/burstSystem.ts
 var BurstSystem = class {
   constructor(particleSystem) {
     this.particleSystem = particleSystem;
     this.particles = [];
   }
-  createRadialBurst(x, y, settings) {
-    for (let i = 0; i < settings.radialBurstAmount; i++) {
-      const angle = randomFloat(
-        0,
-        Math.PI * 2
-      );
-      this.particles.push(
-        this.createBurstStar(
-          x,
-          y,
-          angle,
-          randomFloat(38, 105),
-          randomFloat(1800, 5200)
-        )
-      );
+  createRadialBurst(x, y) {
+    const burstAmount = 34;
+    for (let i = 0; i < burstAmount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = this.random(45, 115);
+      this.particles.push({
+        x: x + Math.cos(angle) * this.random(2, 6),
+        y: y + Math.sin(angle) * this.random(2, 6),
+        size: this.random(0.6, 1.8),
+        density: this.random(6, 18),
+        hue: this.random(200, 265),
+        speedX: Math.cos(angle) * this.random(0.6, 1.8),
+        speedY: Math.sin(angle) * this.random(0.6, 1.8),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        kind: "burst",
+        life: this.random(2800, 3800),
+        maxLife: 3800,
+        glow: 0.55
+      });
     }
-    for (let i = 0; i < settings.radialCoreAmount; i++) {
-      const angle = randomFloat(
-        0,
-        Math.PI * 2
-      );
-      this.particles.push(
-        this.createBurstStar(
-          x,
-          y,
-          angle,
-          randomFloat(8, 34),
-          randomFloat(1400, 3600)
-        )
-      );
-    }
-  }
-  getParticleCount() {
-    return this.particles.length;
-  }
-  createDirectionalBurst(x, y, baseAngle, settings) {
-    for (let i = 0; i < settings.directionalBurstAmount; i++) {
-      const angle = baseAngle + randomFloat(
-        -settings.directionalSpread,
-        settings.directionalSpread
-      );
-      this.particles.push(
-        this.createBurstStar(
-          x,
-          y,
-          angle,
-          randomFloat(45, 115),
-          randomFloat(1800, 5200)
-        )
-      );
+    const coreAmount = 8;
+    for (let i = 0; i < coreAmount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = this.random(10, 32);
+      this.particles.push({
+        x: x + Math.cos(angle) * this.random(3, 12),
+        y: y + Math.sin(angle) * this.random(3, 12),
+        size: this.random(0.9, 2.1),
+        density: this.random(5, 12),
+        hue: this.random(205, 255),
+        speedX: Math.cos(angle) * this.random(0.1, 0.5),
+        speedY: Math.sin(angle) * this.random(0.1, 0.5),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        kind: "burst",
+        life: this.random(2400, 3400),
+        maxLife: 3400,
+        glow: 0.5
+      });
     }
   }
-  createGravityBurst(x, y, settings) {
-    for (let i = 0; i < settings.gravityBurstAmount; i++) {
-      const angle = randomFloat(
-        0,
-        Math.PI * 2
-      );
-      const spawnDistance = randomFloat(
-        settings.gravityBounceDistance,
-        settings.gravityBounceDistance * 2.4
-      );
-      const particle = this.createBurstStar(
-        x + Math.cos(angle) * spawnDistance,
-        y + Math.sin(angle) * spawnDistance,
-        angle,
-        settings.gravityForce,
-        settings.gravityDurationMs
-      );
-      particle.gravityX = x;
-      particle.gravityY = y;
-      particle.affectedByGravity = true;
-      particle.burstGravityForce = settings.gravityForce;
-      particle.collapseDistance = settings.gravityBounceDistance;
-      this.particles.push(particle);
+  createDirectionalBurst(x, y, baseAngle) {
+    const burstAmount = 26;
+    for (let i = 0; i < burstAmount; i++) {
+      const angle = baseAngle + this.random(-0.14, 0.14);
+      const speed = this.random(65, 135);
+      this.particles.push({
+        x,
+        y,
+        size: this.random(0.6, 1.9),
+        density: this.random(6, 18),
+        hue: this.random(200, 265),
+        speedX: Math.cos(angle) * this.random(1.1, 2.8),
+        speedY: Math.sin(angle) * this.random(1.1, 2.8),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        kind: "burst",
+        life: this.random(2200, 3200),
+        maxLife: 3200,
+        glow: 0.55
+      });
     }
   }
-  update(width, height, delta, maxAmbientParticles) {
-    const releasedParticles = [];
+  createGravityBurst(x, y) {
+    const burstAmount = 22;
+    for (let i = 0; i < burstAmount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = this.random(35, 85);
+      this.particles.push({
+        x,
+        y,
+        size: this.random(0.6, 1.8),
+        density: this.random(6, 18),
+        hue: this.random(200, 265),
+        speedX: Math.cos(angle) * this.random(0.8, 2.2),
+        speedY: Math.sin(angle) * this.random(0.8, 2.2),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        kind: "burst",
+        gravityX: x,
+        gravityY: y,
+        bounceCount: 0,
+        maxBounces: 2,
+        gravityTime: 3600,
+        maxGravityTime: 3600,
+        affectedByGravity: true,
+        glow: 0.6
+      });
+    }
+  }
+  update(width, height, delta) {
+    const finishedParticles = [];
     for (const particle of this.particles) {
-      particle.age += delta;
-      if (particle.affectedByGravity && particle.gravityX !== void 0 && particle.gravityY !== void 0) {
-        this.updateGravityParticle(particle);
+      if (particle.affectedByGravity && particle.gravityX !== void 0 && particle.gravityY !== void 0 && particle.gravityTime !== void 0) {
+        this.updateGravityParticle(particle, delta);
+        if (particle.gravityTime <= 0) {
+          finishedParticles.push(particle);
+        }
+      } else if (particle.life !== void 0) {
+        particle.life -= delta;
+        if (particle.life <= 0) {
+          finishedParticles.push(particle);
+        }
       }
       particle.x += particle.speedX + particle.vx * 0.05;
       particle.y += particle.speedY + particle.vy * 0.05;
@@ -2378,6 +752,12 @@ var BurstSystem = class {
       particle.vy *= 0.95;
       particle.speedX *= 0.992;
       particle.speedY *= 0.992;
+      if (particle.glow !== void 0 && particle.glow > 0) {
+        particle.glow -= delta * 16e-5;
+        if (particle.glow < 0) {
+          particle.glow = 0;
+        }
+      }
       if (particle.x < -50)
         particle.x = width + 50;
       if (particle.x > width + 50)
@@ -2386,61 +766,72 @@ var BurstSystem = class {
         particle.y = height + 50;
       if (particle.y > height + 50)
         particle.y = -50;
-      if (particle.age >= particle.releaseAfter) {
-        releasedParticles.push(particle);
-      }
     }
-    this.particles = this.particles.filter(
-      (particle) => particle.age < particle.releaseAfter
-    );
-    for (const particle of releasedParticles) {
-      this.particleSystem.addAmbientParticle(
-        {
-          ...particle,
-          kind: "ambient",
-          life: void 0,
-          maxLife: void 0,
-          gravityX: void 0,
-          gravityY: void 0,
-          bounceCount: void 0,
-          maxBounces: void 0,
-          gravityTime: void 0,
-          maxGravityTime: void 0,
-          affectedByGravity: void 0,
-          connectionAge: 0,
-          connectionFadeDuration: 200,
-          glow: 0.2
-        }
-      );
+    this.particles = this.particles.filter((particle) => {
+      const normalAlive = particle.life === void 0 || particle.life > 0;
+      const gravityAlive = particle.gravityTime === void 0 || particle.gravityTime > 0;
+      return normalAlive && gravityAlive;
+    });
+    for (const particle of finishedParticles) {
+      this.particleSystem.addAmbientParticle({
+        ...particle,
+        kind: "ambient",
+        life: void 0,
+        maxLife: void 0,
+        gravityX: void 0,
+        gravityY: void 0,
+        bounceCount: void 0,
+        maxBounces: void 0,
+        gravityTime: void 0,
+        maxGravityTime: void 0,
+        affectedByGravity: void 0,
+        glow: 0
+      });
     }
-    this.limitParticles(maxAmbientParticles);
   }
-  draw(ctx, _mouse, settings) {
+  draw(ctx, mouse) {
     for (const particle of this.particles) {
-      const alpha = 0.86;
+      const fade = this.getParticleFade(particle);
+      const alpha = 0.04 + fade * 0.5;
       const size = particle.size + (particle.glow ?? 0) * 0.8;
-      const glow = createRadialGlow(
-        ctx,
-        particle.x,
-        particle.y,
-        size * settings.burstGlowSize,
-        `hsla(${particle.hue}, 90%, 76%, ${(particle.glow ?? 0.45) * settings.burstGlowIntensity})`,
-        `hsla(${particle.hue}, 90%, 76%, 0)`
-      );
-      drawFilledCircle(
-        ctx,
-        particle.x,
-        particle.y,
-        size * settings.burstGlowSize,
-        glow
-      );
-      drawFilledCircle(
-        ctx,
+      if ((particle.glow ?? 0) > 0.03) {
+        const gradient = ctx.createRadialGradient(
+          particle.x,
+          particle.y,
+          0,
+          particle.x,
+          particle.y,
+          size * 4.2
+        );
+        gradient.addColorStop(
+          0,
+          `hsla(${particle.hue}, 85%, 72%, ${(particle.glow ?? 0) * 0.18})`
+        );
+        gradient.addColorStop(
+          1,
+          `hsla(${particle.hue}, 85%, 72%, 0)`
+        );
+        ctx.beginPath();
+        ctx.fillStyle = gradient;
+        ctx.arc(
+          particle.x,
+          particle.y,
+          size * 4.2,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.fillStyle = `hsla(${particle.hue}, 80%, 72%, ${alpha})`;
+      ctx.arc(
         particle.x,
         particle.y,
         size,
-        `hsla(${particle.hue}, 90%, 76%, ${alpha})`
+        0,
+        Math.PI * 2
       );
+      ctx.fill();
     }
   }
   limitParticles(maxParticles) {
@@ -2455,294 +846,571 @@ var BurstSystem = class {
   clear() {
     this.particles = [];
   }
-  createBurstStar(x, y, angle, force, releaseAfter) {
-    return {
-      x,
-      y,
-      size: randomFloat(0.7, 1.9),
-      density: randomFloat(6, 18),
-      hue: randomFloat(200, 265),
-      speedX: Math.cos(angle) * randomFloat(0.7, 1.8),
-      speedY: Math.sin(angle) * randomFloat(0.7, 1.8),
-      vx: Math.cos(angle) * force,
-      vy: Math.sin(angle) * force,
-      kind: "burst",
-      depth: randomFloat(0.55, 1),
-      age: 0,
-      releaseAfter,
-      glow: 0.55
-    };
-  }
-  updateGravityParticle(particle) {
+  updateGravityParticle(particle, delta) {
+    particle.gravityTime -= delta;
     const dx = particle.gravityX - particle.x;
     const dy = particle.gravityY - particle.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance <= 0) {
-      return;
+    if (distance > 0) {
+      const angle = Math.atan2(dy, dx);
+      const gravityForce = 90 / Math.max(distance, 100);
+      particle.vx += Math.cos(angle) * gravityForce;
+      particle.vy += Math.sin(angle) * gravityForce;
     }
-    const angle = Math.atan2(dy, dx);
-    const gravityForce = (particle.burstGravityForce ?? 90) / Math.max(
-      distance,
-      particle.collapseDistance ?? 14
-    );
-    particle.vx += Math.cos(angle) * gravityForce;
-    particle.vy += Math.sin(angle) * gravityForce;
+    if (distance < 14) {
+      const outwardAngle = Math.atan2(
+        particle.y - particle.gravityY,
+        particle.x - particle.gravityX
+      );
+      particle.vx = Math.cos(outwardAngle) * this.random(45, 75);
+      particle.vy = Math.sin(outwardAngle) * this.random(45, 75);
+      particle.bounceCount = (particle.bounceCount ?? 0) + 1;
+    }
+  }
+  getParticleFade(particle) {
+    if (particle.affectedByGravity && particle.gravityTime !== void 0 && particle.maxGravityTime !== void 0) {
+      const ratio = Math.max(particle.gravityTime / particle.maxGravityTime, 0);
+      return ratio * ratio * (3 - 2 * ratio);
+    }
+    if (particle.life !== void 0 && particle.maxLife !== void 0) {
+      const ratio = Math.max(particle.life / particle.maxLife, 0);
+      return ratio * ratio * (3 - 2 * ratio);
+    }
+    return 1;
+  }
+  random(min, max) {
+    return min + Math.random() * (max - min);
   }
 };
 
-// src/interaction/InteractionManager.ts
-var InteractionManager = class {
-  constructor(options) {
-    this.destroyed = false;
-    this.handleMouseMove = (event) => {
-      if (this.destroyed)
-        return;
-      const rect = this.canvas.getBoundingClientRect();
-      this.mouse.x = event.clientX - rect.left;
-      this.mouse.y = event.clientY - rect.top;
-      this.mouse.isInside = true;
-      this.parallaxController.move(
-        this.mouse.x,
-        this.mouse.y
-      );
-    };
-    this.handleMouseLeave = () => {
-      if (this.destroyed)
-        return;
-      this.mouse.isInside = false;
-      this.parallaxController.leave();
-    };
-    this.handleWheel = (event) => {
-      if (this.destroyed)
-        return;
-      this.cosmicObjects.handleWheel(
-        event.deltaY
-      );
-    };
-    this.handleClick = (event) => {
-      if (this.destroyed)
-        return;
-      const settings = this.getSettings();
-      const rect = this.canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      this.interactionEffects.handleClick(
-        x,
-        y,
-        this.canvas.clientWidth,
-        this.canvas.clientHeight,
-        settings.clickEffectMode,
-        settings
-      );
-    };
-    this.graphView = options.graphView;
-    this.canvas = options.canvas;
-    this.mouse = options.mouse;
-    this.parallaxController = options.parallaxController;
-    this.interactionEffects = options.interactionEffects;
-    this.cosmicObjects = options.cosmicObjects;
-    this.getSettings = options.getSettings;
+// src/render/cosmicObjects.ts
+var CosmicObjects = class {
+  constructor() {
+    this.objects = [];
+    this.zoom = 1;
+    this.targetZoom = 1;
   }
-  attach() {
-    this.destroyed = false;
-    this.graphView.addEventListener(
-      "mousemove",
-      this.handleMouseMove
+  create(width, height) {
+    this.objects = [];
+    this.createGalaxies(width, height);
+    this.createPlanets(width, height);
+  }
+  handleWheel(deltaY) {
+    const direction = deltaY < 0 ? 1 : -1;
+    this.targetZoom = this.clamp(
+      this.targetZoom + direction * 0.06,
+      0.78,
+      1.45
     );
-    this.graphView.addEventListener(
-      "mouseleave",
-      this.handleMouseLeave
-    );
-    this.graphView.addEventListener(
-      "wheel",
-      this.handleWheel,
-      {
-        passive: true
+  }
+  update(delta) {
+    this.zoom += (this.targetZoom - this.zoom) * 0.08;
+    for (const object of this.objects) {
+      object.rotation += object.rotationSpeed * delta;
+    }
+  }
+  draw(ctx, time, mouse, enableParallax) {
+    for (const object of this.objects) {
+      if (object.kind === "galaxy") {
+        this.drawGalaxy(
+          ctx,
+          object,
+          mouse,
+          enableParallax
+        );
       }
-    );
-    this.graphView.addEventListener(
-      "click",
-      this.handleClick
-    );
+    }
+    for (const object of this.objects) {
+      if (object.kind === "planet") {
+        this.drawPlanet(
+          ctx,
+          object,
+          time,
+          mouse,
+          enableParallax
+        );
+      }
+    }
   }
-  destroy() {
-    this.destroyed = true;
-    this.graphView.removeEventListener(
-      "mousemove",
-      this.handleMouseMove
+  createGalaxies(width, height) {
+    const amount = Math.floor(
+      this.random(2, 4)
     );
-    this.graphView.removeEventListener(
-      "mouseleave",
-      this.handleMouseLeave
-    );
-    this.graphView.removeEventListener(
-      "wheel",
-      this.handleWheel
-    );
-    this.graphView.removeEventListener(
-      "click",
-      this.handleClick
-    );
+    for (let i = 0; i < amount; i++) {
+      this.objects.push({
+        kind: "galaxy",
+        x: this.random(
+          width * 0.1,
+          width * 0.9
+        ),
+        y: this.random(
+          height * 0.1,
+          height * 0.9
+        ),
+        radius: this.random(120, 210),
+        hue: this.random(205, 275),
+        alpha: this.random(0.09, 0.16),
+        depth: this.random(0.06, 0.22),
+        rotation: this.random(
+          0,
+          Math.PI * 2
+        ),
+        rotationSpeed: this.random(
+          -35e-6,
+          35e-6
+        )
+      });
+    }
   }
-};
-
-// src/render/burstCooldownHud.ts
-function drawBurstCooldownHud(ctx, mouse, clickEffectMode, cooldownProgress, ready) {
-  if (clickEffectMode === "none" || !mouse.isInside) {
-    return;
+  createPlanets(width, height) {
+    const amount = Math.floor(
+      this.random(2, 5)
+    );
+    for (let i = 0; i < amount; i++) {
+      this.objects.push({
+        kind: "planet",
+        x: this.random(
+          width * 0.12,
+          width * 0.88
+        ),
+        y: this.random(
+          height * 0.12,
+          height * 0.88
+        ),
+        radius: this.random(20, 42),
+        hue: this.random(185, 295),
+        alpha: this.random(0.34, 0.52),
+        depth: this.random(0.24, 0.52),
+        rotation: this.random(
+          0,
+          Math.PI * 2
+        ),
+        rotationSpeed: this.random(
+          -8e-5,
+          8e-5
+        ),
+        hasRing: Math.random() < 0.5
+      });
+    }
   }
-  const x = mouse.x + 14;
-  const y = mouse.y + 18;
-  const radius = 6;
-  ctx.save();
-  ctx.beginPath();
-  ctx.strokeStyle = ready ? "rgba(210, 235, 255, 0.9)" : "rgba(160, 190, 255, 0.35)";
-  ctx.lineWidth = 1.4;
-  ctx.arc(
-    x,
-    y,
-    radius,
-    0,
-    Math.PI * 2
-  );
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.strokeStyle = "rgba(120, 190, 255, 0.95)";
-  ctx.lineWidth = 2;
-  ctx.arc(
-    x,
-    y,
-    radius,
-    -Math.PI / 2,
-    -Math.PI / 2 + Math.PI * 2 * cooldownProgress
-  );
-  ctx.stroke();
-  if (ready) {
+  drawGalaxy(ctx, object, mouse, enableParallax) {
+    const position = this.getRenderPosition(
+      ctx,
+      object,
+      mouse,
+      enableParallax
+    );
+    const scale = this.getZoomScale(object);
+    const radius = object.radius * scale;
+    ctx.save();
+    ctx.translate(
+      position.x,
+      position.y
+    );
+    ctx.rotate(object.rotation);
+    ctx.scale(1, 0.34);
+    const gradient = ctx.createRadialGradient(
+      0,
+      0,
+      0,
+      0,
+      0,
+      radius
+    );
+    gradient.addColorStop(
+      0,
+      `hsla(${object.hue}, 85%, 76%, ${object.alpha})`
+    );
+    gradient.addColorStop(
+      0.28,
+      `hsla(${object.hue + 18}, 78%, 62%, ${object.alpha * 0.62})`
+    );
+    gradient.addColorStop(
+      0.65,
+      `hsla(${object.hue - 20}, 70%, 45%, ${object.alpha * 0.22})`
+    );
+    gradient.addColorStop(
+      1,
+      `hsla(${object.hue}, 80%, 50%, 0)`
+    );
     ctx.beginPath();
-    ctx.fillStyle = "rgba(180, 220, 255, 0.75)";
+    ctx.fillStyle = gradient;
     ctx.arc(
-      x,
-      y,
-      2,
+      0,
+      0,
+      radius,
       0,
       Math.PI * 2
     );
     ctx.fill();
+    ctx.restore();
   }
-  ctx.restore();
-}
+  drawPlanet(ctx, object, time, mouse, enableParallax) {
+    const position = this.getRenderPosition(
+      ctx,
+      object,
+      mouse,
+      enableParallax
+    );
+    const scale = this.getZoomScale(object);
+    const radius = object.radius * scale;
+    const pulse = 0.9 + Math.sin(
+      time * 45e-5 + object.radius
+    ) * 0.1;
+    ctx.save();
+    ctx.translate(
+      position.x,
+      position.y
+    );
+    ctx.rotate(object.rotation);
+    if (object.hasRing) {
+      ctx.save();
+      ctx.rotate(-0.4);
+      ctx.beginPath();
+      ctx.strokeStyle = `hsla(${object.hue}, 58%, 76%, ${object.alpha * 0.9})`;
+      ctx.lineWidth = 1.2;
+      ctx.ellipse(
+        0,
+        0,
+        radius * 1.9,
+        radius * 0.55,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+    const glow = ctx.createRadialGradient(
+      0,
+      0,
+      radius * 0.2,
+      0,
+      0,
+      radius * 3.4
+    );
+    glow.addColorStop(
+      0,
+      `hsla(${object.hue}, 82%, 72%, ${object.alpha * 0.32 * pulse})`
+    );
+    glow.addColorStop(
+      1,
+      `hsla(${object.hue}, 80%, 70%, 0)`
+    );
+    ctx.beginPath();
+    ctx.fillStyle = glow;
+    ctx.arc(
+      0,
+      0,
+      radius * 3.4,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+    const body = ctx.createRadialGradient(
+      -radius * 0.35,
+      -radius * 0.35,
+      radius * 0.1,
+      0,
+      0,
+      radius
+    );
+    body.addColorStop(
+      0,
+      `hsla(${object.hue + 14}, 72%, 78%, ${object.alpha})`
+    );
+    body.addColorStop(
+      0.55,
+      `hsla(${object.hue}, 64%, 50%, ${object.alpha * 0.95})`
+    );
+    body.addColorStop(
+      1,
+      `hsla(${object.hue - 24}, 62%, 24%, ${object.alpha * 0.8})`
+    );
+    ctx.beginPath();
+    ctx.fillStyle = body;
+    ctx.arc(
+      0,
+      0,
+      radius,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(0, 0, 0, ${object.alpha * 0.42})`;
+    ctx.arc(
+      radius * 0.28,
+      radius * 0.12,
+      radius * 0.95,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+    ctx.restore();
+  }
+  getRenderPosition(ctx, object, mouse, enableParallax) {
+    const centerX = ctx.canvas.clientWidth / 2;
+    const centerY = ctx.canvas.clientHeight / 2;
+    const zoomInfluence = 0.18 + object.depth * 0.65;
+    const zoomedX = centerX + (object.x - centerX) * (1 + (this.zoom - 1) * zoomInfluence);
+    const zoomedY = centerY + (object.y - centerY) * (1 + (this.zoom - 1) * zoomInfluence);
+    if (!enableParallax || mouse.x < 0 || mouse.y < 0) {
+      return {
+        x: zoomedX,
+        y: zoomedY
+      };
+    }
+    const offsetX = (mouse.x - centerX) / centerX;
+    const offsetY = (mouse.y - centerY) / centerY;
+    const parallaxStrength = 32 * (1 - object.depth);
+    return {
+      x: zoomedX - offsetX * parallaxStrength,
+      y: zoomedY - offsetY * parallaxStrength
+    };
+  }
+  getZoomScale(object) {
+    const zoomInfluence = 0.22 + object.depth * 0.55;
+    return 1 + (this.zoom - 1) * zoomInfluence;
+  }
+  random(min, max) {
+    return min + Math.random() * (max - min);
+  }
+  clamp(value, min, max) {
+    return Math.max(
+      min,
+      Math.min(max, value)
+    );
+  }
+  applySettings(_settings) {
+  }
+};
 
-// src/util/performanceProfiler.ts
-var PerformanceProfiler = class {
-  constructor(title = "Cosmos performance", enabled = false) {
-    this.title = title;
-    this.enabled = enabled;
-    this.values = /* @__PURE__ */ new Map();
-    this.counts = /* @__PURE__ */ new Map();
-    this.units = /* @__PURE__ */ new Map();
-    this.lastReport = performance.now();
+// src/render/backgroundRenderer.ts
+var BackgroundRenderer = class {
+  constructor() {
+    this.graphView = null;
+    this.layerFar = null;
+    this.layerNear = null;
   }
-  measure(label, callback) {
-    if (!this.enabled) {
-      callback();
-      return;
-    }
-    const start = performance.now();
-    callback();
-    this.record(
-      label,
-      performance.now() - start,
-      "ms"
-    );
+  setContainer(container, settings) {
+    this.graphView = container;
+    this.graphView.style.position = "relative";
+    this.graphView.style.overflow = "hidden";
+    this.graphView.style.background = "#00020a";
+    this.applySettings(settings);
   }
-  record(label, value, unit = "ms") {
-    if (!this.enabled) {
+  applySettings(settings) {
+    if (!this.graphView)
+      return;
+    if (!this.layerFar || !this.layerNear) {
+      this.clearLayers();
+      this.createLayers(settings);
       return;
     }
-    this.values.set(
-      label,
-      (this.values.get(label) ?? 0) + value
+    this.syncLayer(
+      this.layerFar,
+      settings.backgroundFarStarCount,
+      settings.backgroundFarStarMinSize,
+      settings.backgroundFarStarMaxSize,
+      settings
     );
-    this.counts.set(
-      label,
-      (this.counts.get(label) ?? 0) + 1
+    this.syncLayer(
+      this.layerNear,
+      settings.backgroundNearStarCount,
+      settings.backgroundNearStarMinSize,
+      settings.backgroundNearStarMaxSize,
+      settings
     );
-    this.units.set(
-      label,
-      unit
+    this.applyStarVisuals(
+      this.layerFar,
+      settings.backgroundFarStarMinSize,
+      settings.backgroundFarStarMaxSize,
+      settings
     );
+    this.applyStarVisuals(
+      this.layerNear,
+      settings.backgroundNearStarMinSize,
+      settings.backgroundNearStarMaxSize,
+      settings
+    );
+    this.applyAnimationSettings(settings);
   }
-  reportEvery(ms) {
-    if (!this.enabled) {
+  regenerate(settings) {
+    if (!this.graphView)
+      return;
+    this.clearLayers();
+    this.createLayers(settings);
+  }
+  updateMouse(mouseX, mouseY, enabled, settings) {
+    if (!enabled || !this.graphView || !this.layerFar || !this.layerNear) {
       return;
     }
-    const now = performance.now();
-    if (now - this.lastReport < ms) {
+    const rect = this.graphView.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const offsetX = (mouseX - centerX) / centerX;
+    const offsetY = (mouseY - centerY) / centerY;
+    this.layerFar.style.transform = `translate(${offsetX * -settings.backgroundFarParallax}px, ${offsetY * -settings.backgroundFarParallax}px)`;
+    this.layerNear.style.transform = `translate(${offsetX * -settings.backgroundNearParallax}px, ${offsetY * -settings.backgroundNearParallax}px)`;
+  }
+  resetMouse() {
+    if (this.layerFar) {
+      this.layerFar.style.transform = "translate(0px, 0px)";
+    }
+    if (this.layerNear) {
+      this.layerNear.style.transform = "translate(0px, 0px)";
+    }
+  }
+  update(_enabled) {
+  }
+  createLayers(settings) {
+    if (!this.graphView)
+      return;
+    this.layerFar = this.createLayer(
+      "cosmos-stars-far",
+      settings.backgroundFarStarCount,
+      settings.backgroundFarStarMinSize,
+      settings.backgroundFarStarMaxSize,
+      settings
+    );
+    this.layerNear = this.createLayer(
+      "cosmos-stars-near",
+      settings.backgroundNearStarCount,
+      settings.backgroundNearStarMinSize,
+      settings.backgroundNearStarMaxSize,
+      settings
+    );
+    this.graphView.prepend(this.layerFar);
+    this.graphView.prepend(this.layerNear);
+    this.applyAnimationSettings(settings);
+  }
+  createLayer(className, amount, minSize, maxSize, settings) {
+    const layer = document.createElement("div");
+    layer.className = className;
+    layer.style.position = "absolute";
+    layer.style.inset = "0";
+    layer.style.width = "100%";
+    layer.style.height = "100%";
+    layer.style.pointerEvents = "none";
+    layer.style.zIndex = "0";
+    layer.style.transition = "transform 220ms ease-out";
+    for (let i = 0; i < amount; i++) {
+      layer.appendChild(
+        this.createStar(minSize, maxSize, settings)
+      );
+    }
+    return layer;
+  }
+  syncLayer(layer, targetAmount, minSize, maxSize, settings) {
+    const currentAmount = layer.children.length;
+    if (currentAmount < targetAmount) {
+      const missing = targetAmount - currentAmount;
+      for (let i = 0; i < missing; i++) {
+        layer.appendChild(
+          this.createStar(minSize, maxSize, settings)
+        );
+      }
       return;
     }
-    const rows = [];
-    for (const [label, total] of this.values) {
-      const count = this.counts.get(label) ?? 1;
-      rows.push({
-        label,
-        avg: (total / count).toFixed(2),
-        unit: this.units.get(label) ?? "ms",
-        samples: count
-      });
+    if (currentAmount > targetAmount) {
+      const excess = currentAmount - targetAmount;
+      for (let i = 0; i < excess; i++) {
+        layer.lastElementChild?.remove();
+      }
     }
-    console.group(this.title);
-    console.table(rows);
-    console.groupEnd();
-    this.values.clear();
-    this.counts.clear();
-    this.units.clear();
-    this.lastReport = now;
+  }
+  applyStarVisuals(layer, minSize, maxSize, settings) {
+    for (const child of Array.from(layer.children)) {
+      const star = child;
+      const currentSize = parseFloat(star.dataset.size ?? "1");
+      const size = Math.max(
+        minSize,
+        Math.min(maxSize, currentSize)
+      );
+      const alpha = Math.max(
+        settings.backgroundStarMinAlpha,
+        Math.min(
+          settings.backgroundStarMaxAlpha,
+          parseFloat(star.dataset.alpha ?? "0.6")
+        )
+      );
+      const hue = Math.max(
+        settings.backgroundStarHueMin,
+        Math.min(
+          settings.backgroundStarHueMax,
+          parseFloat(star.dataset.hue ?? "220")
+        )
+      );
+      star.dataset.size = `${size}`;
+      star.dataset.alpha = `${alpha}`;
+      star.dataset.hue = `${hue}`;
+      star.style.width = `${size}px`;
+      star.style.height = `${size}px`;
+      star.style.opacity = `${alpha}`;
+      star.style.background = `hsla(${hue}, 80%, 88%, 1)`;
+      star.style.boxShadow = `0 0 ${size * 4}px hsla(${hue}, 90%, 78%, ${alpha * 0.7})`;
+    }
+  }
+  createStar(minSize, maxSize, settings) {
+    const star = document.createElement("div");
+    const size = this.random(minSize, maxSize);
+    const alpha = this.random(
+      settings.backgroundStarMinAlpha,
+      settings.backgroundStarMaxAlpha
+    );
+    const hue = this.random(
+      settings.backgroundStarHueMin,
+      settings.backgroundStarHueMax
+    );
+    star.dataset.size = `${size}`;
+    star.dataset.alpha = `${alpha}`;
+    star.dataset.hue = `${hue}`;
+    star.style.position = "absolute";
+    star.style.left = `${Math.random() * 100}%`;
+    star.style.top = `${Math.random() * 100}%`;
+    star.style.width = `${size}px`;
+    star.style.height = `${size}px`;
+    star.style.borderRadius = "50%";
+    star.style.opacity = `${alpha}`;
+    star.style.background = `hsla(${hue}, 80%, 88%, 1)`;
+    star.style.boxShadow = `0 0 ${size * 4}px hsla(${hue}, 90%, 78%, ${alpha * 0.7})`;
+    if (Math.random() < settings.backgroundPulseChance) {
+      star.style.animation = `cosmosPulse ${this.random(4, 10)}s ease-in-out infinite`;
+    }
+    return star;
+  }
+  applyAnimationSettings(settings) {
+    if (this.layerFar) {
+      this.layerFar.style.animation = `cosmosDriftFar ${settings.backgroundFarDriftSeconds}s linear infinite`;
+    }
+    if (this.layerNear) {
+      this.layerNear.style.animation = `cosmosDriftNear ${settings.backgroundNearDriftSeconds}s linear infinite`;
+    }
+  }
+  clearLayers() {
+    this.layerFar?.remove();
+    this.layerNear?.remove();
+    this.layerFar = null;
+    this.layerNear = null;
+  }
+  random(min, max) {
+    return min + Math.random() * (max - min);
   }
 };
 
 // src/render/cosmosRenderer.ts
-var RESET_BUTTON_CLASS = "cosmos-reset-stars-button";
-var SYSTEM_STATS_CLASS = "cosmos-system-stats";
-var SYSTEM_STATS_TOGGLE_CLASS = "cosmos-system-stats-toggle";
 var CosmosRenderer = class {
   constructor(plugin) {
     this.plugin = plugin;
-    this.canvasLayer = new CanvasLayer();
+    this.canvas = null;
+    this.ctx = null;
     this.graphView = null;
+    this.eventsBoundTo = null;
     this.resizeObserver = null;
     this.animationFrame = null;
-    this.injectInterval = null;
-    this.destroyed = false;
-    this.resetButton = null;
-    this.statsPanel = null;
-    this.statsBody = null;
-    this.statsToggleButton = null;
-    this.statsCollapsed = false;
-    this.statsPinned = true;
-    this.statsClosed = false;
-    this.statsDragStart = null;
     this.lastTime = 0;
-    /*
-            DEBUG HUD BASE
-    
-            Luego estos valores deberían venir desde settings.
-        */
-    this.debugHudEnabled = false;
-    this.debugHudOptions = {
-      showPerformance: true,
-      showEntities: true,
-      showCanvas: true,
-      showMouse: true
-    };
-    this.fps = 0;
-    this.fpsFrameCount = 0;
-    this.fpsTimer = 0;
-    this.frameMs = 0;
-    this.updateMs = 0;
-    this.drawMs = 0;
-    this.profiler = new PerformanceProfiler();
     this.particleSystem = new ParticleSystem();
-    this.parallaxController = new ParallaxController();
     this.burstSystem = new BurstSystem(
       this.particleSystem
     );
@@ -2752,149 +1420,37 @@ var CosmosRenderer = class {
     this.interactionEffects = new InteractionEffects(
       this.burstSystem
     );
-    this.interactionManager = null;
     this.mouse = {
-      x: 0,
-      y: 0,
-      radius: 130,
-      isInside: false
-    };
-    this.handleResetStars = (event) => {
-      event.stopPropagation();
-      event.preventDefault();
-      this.resetStars();
+      x: -9999,
+      y: -9999,
+      radius: 130
     };
     this.animate = (time) => {
-      if (this.destroyed) {
-        return;
-      }
-      if (this.isGraphDetached()) {
-        this.teardownGraphInstance();
-        return;
-      }
-      const canvas = this.canvasLayer.getCanvas();
-      const ctx = this.canvasLayer.getContext();
-      if (!canvas || !ctx) {
-        this.animationFrame = null;
-        return;
-      }
-      if (canvas.clientWidth <= 0 || canvas.clientHeight <= 0) {
-        this.animationFrame = requestAnimationFrame(
-          this.animate
-        );
-        return;
-      }
-      const frameStart = performance.now();
-      const rawDelta = time - this.lastTime;
       const delta = Math.min(
-        rawDelta,
+        time - this.lastTime,
         32
       );
       this.lastTime = time;
-      this.updateFps(rawDelta);
-      const updateStart = performance.now();
-      this.update(
-        delta,
-        time
-      );
-      this.updateMs = performance.now() - updateStart;
-      const drawStart = performance.now();
+      this.update(delta, time);
       this.draw(time);
-      this.drawMs = performance.now() - drawStart;
-      this.frameMs = performance.now() - frameStart;
-      if (this.destroyed) {
-        return;
-      }
       this.animationFrame = requestAnimationFrame(
         this.animate
       );
     };
-    this.handleStatsDragStart = (event) => {
-      if (!this.statsPanel || event.target instanceof HTMLElement && event.target.closest("button")) {
-        return;
-      }
-      event.preventDefault();
-      const panelRect = this.statsPanel.getBoundingClientRect();
-      const parentRect = this.statsPanel.offsetParent instanceof HTMLElement ? this.statsPanel.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
-      this.statsDragStart = {
-        mouseX: event.clientX,
-        mouseY: event.clientY,
-        left: panelRect.left - parentRect.left,
-        top: panelRect.top - parentRect.top
-      };
-      document.addEventListener(
-        "mousemove",
-        this.handleStatsDragMove
-      );
-      document.addEventListener(
-        "mouseup",
-        this.handleStatsDragEnd
-      );
-    };
-    this.handleStatsDragMove = (event) => {
-      if (!this.statsPanel || !this.statsDragStart) {
-        return;
-      }
-      const nextLeft = this.statsDragStart.left + event.clientX - this.statsDragStart.mouseX;
-      const nextTop = this.statsDragStart.top + event.clientY - this.statsDragStart.mouseY;
-      this.statsPanel.style.left = `${Math.max(0, nextLeft)}px`;
-      this.statsPanel.style.top = `${Math.max(0, nextTop)}px`;
-      this.statsPanel.style.right = "auto";
-    };
-    this.handleStatsDragEnd = () => {
-      this.statsDragStart = null;
-      document.removeEventListener(
-        "mousemove",
-        this.handleStatsDragMove
-      );
-      document.removeEventListener(
-        "mouseup",
-        this.handleStatsDragEnd
-      );
-    };
-    this.particleSettingsSnapshot = this.getParticleSettingsSnapshot(
-      this.plugin.settings
-    );
   }
   start() {
-    if (this.injectInterval !== null) {
-      return;
-    }
-    this.destroyed = false;
-    this.injectCosmos();
-    this.injectInterval = window.setInterval(() => {
-      if (this.destroyed) {
-        return;
-      }
-      this.injectCosmos();
-    }, 1e3);
+    this.injectLoop();
   }
   reloadSettings() {
-    if (this.destroyed)
-      return;
-    const currentParticleSettings = this.getParticleSettingsSnapshot(
-      this.plugin.settings
-    );
-    const didMaxParticlesChange = this.particleSettingsSnapshot.maxParticles !== currentParticleSettings.maxParticles;
-    const didParticleVisualSettingsChange = this.didParticleVisualSettingsChange(
-      this.particleSettingsSnapshot,
-      currentParticleSettings
-    );
     this.backgroundRenderer.applySettings(
       this.plugin.settings
     );
-    this.particleSystem.invalidateConnections();
-    if (didMaxParticlesChange) {
-      this.particleSystem.limitParticles(
-        this.plugin.settings.maxParticles
-      );
-    }
-    if (didParticleVisualSettingsChange) {
-      this.particleSystem.applyVisualSettings(
-        this.plugin.settings
-      );
-    }
-    this.particleSettingsSnapshot = currentParticleSettings;
+    this.particleSystem.limitParticles(
+      this.plugin.settings.maxParticles
+    );
+    this.particleSystem.applyVisualSettings(
+      this.plugin.settings
+    );
     this.burstSystem.limitParticles(
       this.plugin.settings.burstParticleLimit
     );
@@ -2902,85 +1458,76 @@ var CosmosRenderer = class {
       this.plugin.settings
     );
     this.mouse.radius = this.plugin.settings.mouseFieldRadius;
-    this.parallaxController.setRadius(
-      this.plugin.settings.mouseFieldRadius
-    );
-  }
-  getParticleSettingsSnapshot(settings) {
-    return {
-      maxParticles: settings.maxParticles,
-      starMinSize: settings.starMinSize,
-      starMaxSize: settings.starMaxSize,
-      starHueMin: settings.starHueMin,
-      starHueMax: settings.starHueMax,
-      particleColor: settings.particleColor,
-      baseSpeed: settings.baseSpeed
-    };
-  }
-  didParticleVisualSettingsChange(previous, current) {
-    return previous.starMinSize !== current.starMinSize || previous.starMaxSize !== current.starMaxSize || previous.starHueMin !== current.starHueMin || previous.starHueMax !== current.starHueMax || previous.particleColor !== current.particleColor || previous.baseSpeed !== current.baseSpeed;
   }
   destroy() {
-    this.destroyed = true;
-    if (this.injectInterval !== null) {
-      window.clearInterval(
-        this.injectInterval
+    if (this.animationFrame !== null) {
+      cancelAnimationFrame(
+        this.animationFrame
       );
-      this.injectInterval = null;
     }
-    this.teardownGraphInstance();
-    this.cleanupCosmosElements();
-    this.cleanupGraphViewStyles();
+    this.resizeObserver?.disconnect();
+    this.canvas?.remove();
+    this.canvas = null;
+    this.ctx = null;
+    this.graphView = null;
+    this.eventsBoundTo = null;
+  }
+  injectLoop() {
+    window.setInterval(() => {
+      this.injectCosmos();
+    }, 1e3);
   }
   injectCosmos() {
-    if (this.destroyed)
-      return;
     const graphView = document.querySelector(
       '.workspace-leaf-content[data-type="graph"] .view-content, .workspace-leaf-content[data-type="localgraph"] .view-content'
     );
     if (!graphView)
       return;
     const isNewGraphView = this.graphView !== graphView;
-    if (!isNewGraphView && this.canvasLayer.isConnected()) {
+    if (!isNewGraphView && this.canvas?.isConnected) {
       return;
-    }
-    if (isNewGraphView && this.graphView !== null) {
-      this.teardownGraphInstance();
     }
     this.graphView = graphView;
     this.backgroundRenderer.setContainer(
       graphView,
       this.plugin.settings
     );
-    this.ensureResetButton(graphView);
-    if (this.debugHudEnabled) {
-      this.ensureSystemStatsPanel(graphView);
+    let canvas = graphView.querySelector(
+      ".cosmos-animation-canvas"
+    );
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.className = "cosmos-animation-canvas";
+      canvas.style.position = "absolute";
+      canvas.style.inset = "0";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      canvas.style.pointerEvents = "none";
+      canvas.style.zIndex = "5";
+      canvas.style.opacity = "1";
+      canvas.style.mixBlendMode = "screen";
+      graphView.appendChild(canvas);
     }
-    const attached = this.canvasLayer.attach(graphView);
-    if (!attached)
+    this.canvas = canvas;
+    const ctx = canvas.getContext("2d");
+    if (!ctx)
       return;
+    this.ctx = ctx;
     this.setupResizeObserver();
     this.resizeCanvas();
-    const canvas = this.canvasLayer.getCanvas();
-    if (!canvas)
-      return;
-    this.parallaxController.setSize(
-      canvas.clientWidth,
-      canvas.clientHeight
-    );
-    this.setupInteractionManager();
-    if (canvas.clientWidth <= 0 || canvas.clientHeight <= 0) {
+    this.setupEvents();
+    if (this.canvas.clientWidth <= 0 || this.canvas.clientHeight <= 0) {
       return;
     }
     if (isNewGraphView || !this.particleSystem.hasParticles()) {
       this.burstSystem.clear();
       this.cosmicObjects.create(
-        canvas.clientWidth,
-        canvas.clientHeight
+        this.canvas.clientWidth,
+        this.canvas.clientHeight
       );
       this.particleSystem.createParticles(
-        canvas.clientWidth,
-        canvas.clientHeight,
+        this.canvas.clientWidth,
+        this.canvas.clientHeight,
         this.plugin.settings.particleCount,
         this.plugin.settings
       );
@@ -2990,132 +1537,14 @@ var CosmosRenderer = class {
     );
     if (this.animationFrame === null) {
       this.lastTime = performance.now();
-      this.animate(
-        this.lastTime
-      );
+      this.animate(this.lastTime);
     }
-  }
-  isGraphDetached() {
-    return !this.graphView || !this.graphView.isConnected;
-  }
-  teardownGraphInstance() {
-    if (this.animationFrame !== null) {
-      cancelAnimationFrame(
-        this.animationFrame
-      );
-      this.animationFrame = null;
-    }
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = null;
-    this.interactionManager?.destroy();
-    this.interactionManager = null;
-    this.removeResetButton();
-    this.removeSystemStatsPanel();
-    this.canvasLayer.destroy();
-    this.graphView = null;
-  }
-  ensureResetButton(graphView) {
-    let button = graphView.querySelector(
-      `.${RESET_BUTTON_CLASS}`
-    );
-    if (!button) {
-      button = document.createElement(
-        "button"
-      );
-      button.className = RESET_BUTTON_CLASS;
-      button.textContent = "Reset stars";
-      button.title = "Reset Cosmos stars";
-      button.addEventListener(
-        "click",
-        this.handleResetStars
-      );
-      graphView.appendChild(button);
-    }
-    this.resetButton = button;
-  }
-  resetStars() {
-    const width = this.canvasLayer.getWidth();
-    const height = this.canvasLayer.getHeight();
-    if (width <= 0 || height <= 0) {
-      return;
-    }
-    this.burstSystem.clear();
-    this.backgroundRenderer.regenerate(
-      this.plugin.settings
-    );
-    this.cosmicObjects.create(
-      width,
-      height
-    );
-    this.particleSystem.createParticles(
-      width,
-      height,
-      this.plugin.settings.particleCount,
-      this.plugin.settings
-    );
-  }
-  removeResetButton() {
-    this.resetButton?.removeEventListener(
-      "click",
-      this.handleResetStars
-    );
-    this.resetButton?.remove();
-    this.resetButton = null;
-    document.removeEventListener(
-      "mousemove",
-      this.handleStatsDragMove
-    );
-    document.removeEventListener(
-      "mouseup",
-      this.handleStatsDragEnd
-    );
-  }
-  setupInteractionManager() {
-    if (!this.graphView)
-      return;
-    const canvas = this.canvasLayer.getCanvas();
-    if (!canvas)
-      return;
-    this.interactionManager?.destroy();
-    this.interactionManager = new InteractionManager({
-      graphView: this.graphView,
-      canvas,
-      mouse: this.mouse,
-      parallaxController: this.parallaxController,
-      interactionEffects: this.interactionEffects,
-      cosmicObjects: this.cosmicObjects,
-      getSettings: () => this.plugin.settings
-    });
-    this.interactionManager.attach();
-  }
-  cleanupCosmosElements() {
-    CanvasLayer.cleanupAll();
-    document.querySelectorAll(
-      [
-        ".cosmos-background-root",
-        ".cosmos-background-canvas",
-        ".cosmos-background-layer",
-        ".cosmos-stars-far",
-        ".cosmos-stars-near",
-        `.${SYSTEM_STATS_CLASS}`,
-        `.${RESET_BUTTON_CLASS}`
-      ].join(", ")
-    ).forEach((element) => {
-      element.remove();
-    });
   }
   setupResizeObserver() {
     if (!this.graphView)
       return;
     this.resizeObserver?.disconnect();
     this.resizeObserver = new ResizeObserver(() => {
-      if (this.destroyed) {
-        return;
-      }
-      if (this.isGraphDetached()) {
-        this.teardownGraphInstance();
-        return;
-      }
       this.resizeCanvas();
     });
     this.resizeObserver.observe(
@@ -3123,801 +1552,386 @@ var CosmosRenderer = class {
     );
   }
   resizeCanvas() {
-    if (this.destroyed || !this.graphView) {
+    if (!this.canvas || !this.graphView || !this.ctx) {
       return;
     }
-    const resized = this.canvasLayer.resize(
-      this.graphView
-    );
-    if (!resized)
+    const rect = this.graphView.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
       return;
-    this.parallaxController.setSize(
-      this.canvasLayer.getWidth(),
-      this.canvasLayer.getHeight()
+    }
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.floor(
+      rect.width * dpr
+    );
+    this.canvas.height = Math.floor(
+      rect.height * dpr
+    );
+    this.canvas.style.width = `${rect.width}px`;
+    this.canvas.style.height = `${rect.height}px`;
+    this.ctx.setTransform(
+      dpr,
+      0,
+      0,
+      dpr,
+      0,
+      0
     );
   }
-  updateFps(delta) {
-    this.fpsFrameCount++;
-    this.fpsTimer += delta;
-    if (this.fpsTimer < 500) {
+  setupEvents() {
+    if (!this.graphView)
+      return;
+    if (this.eventsBoundTo === this.graphView) {
       return;
     }
-    this.fps = Math.round(
-      this.fpsFrameCount * 1e3 / this.fpsTimer
-    );
-    this.fpsFrameCount = 0;
-    this.fpsTimer = 0;
-  }
-  update(delta, time) {
-    if (this.destroyed) {
-      return;
-    }
-    const canvas = this.canvasLayer.getCanvas();
-    if (!canvas)
-      return;
-    this.parallaxController.setSize(
-      canvas.clientWidth,
-      canvas.clientHeight
-    );
-    this.profiler.measure(
-      "parallaxController.update",
-      () => {
-        this.parallaxController.update(
-          delta
-        );
-      }
-    );
-    this.profiler.measure(
-      "interactionEffects.update",
-      () => {
-        this.interactionEffects.update(
-          delta,
-          this.plugin.settings.gravityCooldownMs
-        );
-      }
-    );
-    this.profiler.measure(
-      "backgroundRenderer.update",
-      () => {
-        const backgroundParallax = this.parallaxController.getOffset(
-          1
-        );
-        this.backgroundRenderer.setParallax(
-          backgroundParallax.x,
-          backgroundParallax.y
-        );
-        this.backgroundRenderer.update(
-          this.plugin.settings.enableBackground,
-          this.plugin.settings.enableParallax
-        );
-      }
-    );
-    this.profiler.measure(
-      "cosmicObjects.update",
-      () => {
-        this.cosmicObjects.update(
-          delta
-        );
-      }
-    );
-    this.profiler.measure(
-      "particleSystem.update",
-      () => {
-        this.particleSystem.update(
-          canvas.clientWidth,
-          canvas.clientHeight,
-          this.mouse,
-          delta,
+    this.eventsBoundTo = this.graphView;
+    this.graphView.addEventListener(
+      "mousemove",
+      (event) => {
+        if (!this.canvas)
+          return;
+        const rect = this.canvas.getBoundingClientRect();
+        this.mouse.x = event.clientX - rect.left;
+        this.mouse.y = event.clientY - rect.top;
+        this.backgroundRenderer.updateMouse(
+          this.mouse.x,
+          this.mouse.y,
+          this.plugin.settings.enableParallax,
           this.plugin.settings
         );
       }
     );
-    this.profiler.measure(
-      "burstSystem.update",
+    this.graphView.addEventListener(
+      "mouseleave",
       () => {
-        this.burstSystem.update(
-          canvas.clientWidth,
-          canvas.clientHeight,
-          delta,
-          this.plugin.settings.maxParticles
+        this.mouse.x = -9999;
+        this.mouse.y = -9999;
+        this.backgroundRenderer.resetMouse();
+      }
+    );
+    this.graphView.addEventListener(
+      "wheel",
+      (event) => {
+        this.cosmicObjects.handleWheel(
+          event.deltaY
+        );
+      },
+      {
+        passive: true
+      }
+    );
+    this.graphView.addEventListener(
+      "click",
+      (event) => {
+        if (!this.canvas)
+          return;
+        const rect = this.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        this.interactionEffects.handleClick(
+          x,
+          y,
+          this.canvas.clientWidth,
+          this.canvas.clientHeight,
+          this.plugin.settings.clickEffectMode,
+          this.plugin.settings.burstParticleLimit
         );
       }
     );
-    this.profiler.measure(
-      "shootingStars.update",
-      () => {
-        this.shootingStars.update(
-          delta,
-          time,
-          canvas.clientWidth,
-          canvas.clientHeight,
-          this.plugin.settings.enableShootingStars
-        );
-      }
+  }
+  update(delta, time) {
+    if (!this.canvas)
+      return;
+    this.interactionEffects.update(
+      delta,
+      this.plugin.settings.gravityCooldownMs
+    );
+    this.backgroundRenderer.update(
+      this.plugin.settings.enableParallax
+    );
+    this.cosmicObjects.update(
+      delta
+    );
+    this.particleSystem.update(
+      this.canvas.clientWidth,
+      this.canvas.clientHeight,
+      this.mouse,
+      delta,
+      this.plugin.settings
+    );
+    this.burstSystem.update(
+      this.canvas.clientWidth,
+      this.canvas.clientHeight,
+      delta
+    );
+    this.shootingStars.update(
+      delta,
+      time,
+      this.canvas.clientWidth,
+      this.canvas.clientHeight,
+      this.plugin.settings.enableShootingStars
     );
   }
   draw(time) {
-    if (this.destroyed) {
+    if (!this.canvas || !this.ctx) {
       return;
     }
-    const ctx = this.canvasLayer.getContext();
-    if (!ctx) {
-      return;
-    }
-    const visualMouse = this.parallaxController.getMouse();
-    this.profiler.measure(
-      "canvasLayer.clear",
-      () => {
-        this.canvasLayer.clear();
-      }
+    this.ctx.clearRect(
+      0,
+      0,
+      this.canvas.clientWidth,
+      this.canvas.clientHeight
     );
     if (this.plugin.settings.enableParticles) {
-      this.profiler.measure(
-        "cosmicObjects.draw",
-        () => {
-          this.cosmicObjects.draw(
-            ctx,
-            time,
-            visualMouse,
-            this.plugin.settings.enableParallax
-          );
-        }
+      this.cosmicObjects.draw(
+        this.ctx,
+        time,
+        this.mouse,
+        this.plugin.settings.enableParallax
       );
-      this.profiler.measure(
-        "particleSystem.draw",
-        () => {
-          this.particleSystem.draw(
-            ctx,
-            time,
-            visualMouse,
-            this.plugin.settings
-          );
-        }
+      this.particleSystem.draw(
+        this.ctx,
+        time,
+        this.mouse,
+        this.plugin.settings
       );
-      this.profiler.measure(
-        "burstSystem.draw",
-        () => {
-          this.burstSystem.draw(
-            ctx,
-            this.mouse,
-            this.plugin.settings
-          );
-        }
+      this.burstSystem.draw(
+        this.ctx,
+        this.mouse
       );
     }
-    this.profiler.measure(
-      "shootingStars.draw",
-      () => {
-        this.shootingStars.draw(
-          ctx
-        );
-      }
+    this.shootingStars.draw(
+      this.ctx
     );
-    this.profiler.measure(
-      "burstCooldownHud.draw",
-      () => {
-        drawBurstCooldownHud(
-          ctx,
-          this.mouse,
-          this.plugin.settings.clickEffectMode,
-          this.interactionEffects.getBurstCooldownProgress(
-            this.plugin.settings.gravityCooldownMs
-          ),
-          this.interactionEffects.canUseBurst()
-        );
-      }
-    );
-    this.updateSystemStatsPanel();
-    this.profiler.reportEvery(
-      1e3
+    this.drawBurstCooldownHud(
+      this.ctx
     );
   }
-  updateSystemStatsPanel() {
-    if (!this.debugHudEnabled) {
+  drawBurstCooldownHud(ctx) {
+    if (this.plugin.settings.clickEffectMode === "none" || this.mouse.x < 0 || this.mouse.y < 0) {
       return;
     }
-    if (this.statsClosed) {
-      return;
-    }
-    if (!this.statsBody) {
-      return;
-    }
-    const metrics = this.getDebugHudMetrics();
-    this.statsBody.empty();
-    if (this.statsCollapsed) {
-      return;
-    }
-    this.addStatsRow(
-      "FPS",
-      `${metrics.fps}`
+    const progress = this.interactionEffects.getBurstCooldownProgress(
+      this.plugin.settings.gravityCooldownMs
     );
-    this.addStatsRow(
-      "Frame time",
-      `${metrics.frameMs.toFixed(2)} ms`
+    const ready = this.interactionEffects.canUseBurst();
+    const x = this.mouse.x + 14;
+    const y = this.mouse.y + 18;
+    const radius = 6;
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = ready ? "rgba(210, 235, 255, 0.9)" : "rgba(160, 190, 255, 0.35)";
+    ctx.lineWidth = 1.4;
+    ctx.arc(
+      x,
+      y,
+      radius,
+      0,
+      Math.PI * 2
     );
-    this.addStatsRow(
-      "Update",
-      `${metrics.updateMs.toFixed(2)} ms`
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(120, 190, 255, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.arc(
+      x,
+      y,
+      radius,
+      -Math.PI / 2,
+      -Math.PI / 2 + Math.PI * 2 * progress
     );
-    this.addStatsRow(
-      "Draw",
-      `${metrics.drawMs.toFixed(2)} ms`
-    );
-    this.addStatsDivider();
-    this.addStatsRow(
-      "Particles",
-      `${metrics.particles}`
-    );
-    this.addStatsRow(
-      "Burst particles",
-      `${metrics.burstParticles}`
-    );
-    this.addStatsRow(
-      "Shooting stars",
-      `${metrics.shootingStars}`
-    );
-    this.addStatsDivider();
-    this.addStatsRow(
-      "Connections",
-      `${metrics.connectionSegments}`
-    );
-    this.addStatsRow(
-      "Connection time",
-      `${metrics.connectionDrawMs.toFixed(2)} ms`
-    );
-    this.addStatsRow(
-      "Canvas",
-      `${metrics.canvasWidth} x ${metrics.canvasHeight}`
-    );
-    this.addStatsRow(
-      "Mouse",
-      metrics.mouseInside ? "Inside" : "Outside"
-    );
-  }
-  ensureSystemStatsPanel(graphView) {
-    if (!this.debugHudEnabled) {
-      return;
-    }
-    this.ensureSystemStatsToggle(
-      graphView
-    );
-    if (this.statsClosed) {
-      return;
-    }
-    if (this.statsPanel?.isConnected) {
-      return;
-    }
-    const panel = document.createElement("div");
-    panel.className = SYSTEM_STATS_CLASS;
-    const header = panel.createDiv({
-      cls: "cosmos-system-stats-header"
-    });
-    header.createEl("span", {
-      text: "System"
-    });
-    const actions = header.createDiv({
-      cls: "cosmos-system-stats-actions"
-    });
-    const collapseButton = actions.createEl("button", {
-      text: "\u2212",
-      cls: "cosmos-system-stats-button"
-    });
-    const pinButton = actions.createEl("button", {
-      text: "Pin",
-      cls: "cosmos-system-stats-button"
-    });
-    const closeButton = actions.createEl("button", {
-      text: "x",
-      cls: "cosmos-system-stats-button"
-    });
-    const body = panel.createDiv({
-      cls: "cosmos-system-stats-body"
-    });
-    header.addEventListener(
-      "mousedown",
-      this.handleStatsDragStart
-    );
-    collapseButton.onclick = () => {
-      this.statsCollapsed = !this.statsCollapsed;
-      collapseButton.textContent = this.statsCollapsed ? "+" : "\u2212";
-      panel.toggleClass(
-        "is-collapsed",
-        this.statsCollapsed
+    ctx.stroke();
+    if (ready) {
+      ctx.beginPath();
+      ctx.fillStyle = "rgba(180, 220, 255, 0.75)";
+      ctx.arc(
+        x,
+        y,
+        2,
+        0,
+        Math.PI * 2
       );
-    };
-    pinButton.onclick = () => {
-      this.statsPinned = !this.statsPinned;
-      pinButton.textContent = this.statsPinned ? "Pin" : "Float";
-      panel.toggleClass(
-        "is-floating",
-        !this.statsPinned
-      );
-    };
-    closeButton.onclick = () => {
-      this.statsClosed = true;
-      this.statsPanel?.remove();
-      this.statsPanel = null;
-      this.statsBody = null;
-      this.statsToggleButton?.show();
-    };
-    graphView.appendChild(panel);
-    this.statsPanel = panel;
-    this.statsBody = body;
-    this.statsToggleButton?.hide();
-  }
-  ensureSystemStatsToggle(graphView) {
-    if (!this.debugHudEnabled) {
-      return;
+      ctx.fill();
     }
-    if (this.statsToggleButton?.isConnected) {
-      return;
-    }
-    const button = document.createElement("button");
-    button.className = SYSTEM_STATS_TOGGLE_CLASS;
-    button.textContent = "System";
-    button.title = "Open system stats";
-    button.onclick = () => {
-      this.statsClosed = false;
-      button.hide();
-      this.ensureSystemStatsPanel(
-        graphView
-      );
-    };
-    graphView.appendChild(button);
-    this.statsToggleButton = button;
-    if (!this.statsClosed) {
-      button.hide();
-    }
-  }
-  removeSystemStatsPanel() {
-    this.statsPanel?.remove();
-    this.statsToggleButton?.remove();
-    this.statsPanel = null;
-    this.statsBody = null;
-    this.statsToggleButton = null;
-  }
-  addStatsRow(label, value) {
-    if (!this.statsBody) {
-      return;
-    }
-    const row = this.statsBody.createDiv({
-      cls: "cosmos-system-stats-row"
-    });
-    row.createSpan({
-      text: label
-    });
-    row.createSpan({
-      text: value
-    });
-  }
-  addStatsDivider() {
-    this.statsBody?.createDiv({
-      cls: "cosmos-system-stats-divider"
-    });
-  }
-  getDebugHudMetrics() {
-    const particleMetrics = this.particleSystem.getDebugMetrics();
-    return {
-      fps: this.fps,
-      frameMs: this.frameMs,
-      updateMs: this.updateMs,
-      drawMs: this.drawMs,
-      particleDrawMs: particleMetrics.drawParticlesMs,
-      connectionDrawMs: particleMetrics.drawConnectionsMs,
-      connectionGridMs: particleMetrics.connectionGridMs,
-      connectionScanMs: particleMetrics.connectionScanMs,
-      connectionStrokeMs: particleMetrics.connectionStrokeMs,
-      connectionSegments: particleMetrics.connectionSegments,
-      connectionBuckets: particleMetrics.connectionBuckets,
-      connectionRenderPoints: particleMetrics.connectionRenderPoints,
-      particles: this.particleSystem.getParticleCount(),
-      burstParticles: this.burstSystem.getParticleCount(),
-      shootingStars: this.shootingStars.getStarCount(),
-      canvasWidth: this.canvasLayer.getWidth(),
-      canvasHeight: this.canvasLayer.getHeight(),
-      mouseInside: this.mouse.isInside,
-      clickEffectMode: this.plugin.settings.clickEffectMode
-    };
-  }
-  cleanupGraphViewStyles() {
-    const graphViews = document.querySelectorAll(
-      '.workspace-leaf-content[data-type="graph"] .view-content, .workspace-leaf-content[data-type="localgraph"] .view-content'
-    );
-    graphViews.forEach(
-      (graphView) => {
-        graphView.style.removeProperty(
-          "background"
-        );
-        graphView.style.removeProperty(
-          "background-color"
-        );
-        graphView.style.removeProperty(
-          "position"
-        );
-        graphView.style.removeProperty(
-          "overflow"
-        );
-      }
-    );
+    ctx.restore();
   }
 };
 
 // src/settings/settingsTab.ts
+var import_obsidian7 = require("obsidian");
+
+// src/ui/renderBackgroundSettings.ts
 var import_obsidian = require("obsidian");
-var CosmosSettingTab = class extends import_obsidian.PluginSettingTab {
-  constructor(app, plugin) {
-    super(app, plugin);
-    this.plugin = plugin;
+
+// src/ui/createSettingSection.ts
+function createSettingSection(containerEl, title, description) {
+  const section = containerEl.createDiv();
+  section.addClass("cosmos-settings-section");
+  section.createEl("h3", {
+    text: title
+  }).addClass("cosmos-settings-section-title");
+  if (description) {
+    section.createEl("p", {
+      text: description
+    }).addClass("cosmos-settings-section-description");
   }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl("h1", {
-      text: "Cosmos Graph"
+  return section;
+}
+
+// src/ui/renderBackgroundSettings.ts
+function renderBackgroundSettings(containerEl, plugin) {
+  const section = createSettingSection(
+    containerEl,
+    "Background Stars",
+    "Configure the static starfield layers behind the graph."
+  );
+  new import_obsidian.Setting(section).setName("Far star count").setDesc("Amount of small stars in the far background layer.").addSlider((slider) => {
+    slider.setLimits(0, 1e3, 10).setValue(plugin.settings.backgroundFarStarCount).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundFarStarCount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     });
-    containerEl.createEl("p", {
-      text: "Most Cosmos Graph settings are now managed from the Cosmos Control panel."
+  });
+  new import_obsidian.Setting(section).setName("Near star count").setDesc("Amount of brighter stars in the near background layer.").addSlider((slider) => {
+    slider.setLimits(0, 600, 10).setValue(plugin.settings.backgroundNearStarCount).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundNearStarCount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     });
-    new import_obsidian.Setting(containerEl).setName("Open Cosmos Control").setDesc(
-      "Open the dedicated Cosmos Graph control panel."
-    ).addButton(
-      (button) => button.setButtonText("Open").onClick(() => {
-        this.plugin.activateCosmosControlView();
-      })
-    );
-    new import_obsidian.Setting(containerEl).setName("Reset all settings").setDesc(
-      "Restore all Cosmos Graph settings to default values."
-    ).addButton(
-      (button) => button.setWarning().setButtonText("Reset").onClick(async () => {
-        await this.plugin.resetSettings();
-      })
-    );
-  }
-};
-
-// src/settings/sections/background.ts
-var DEFAULT_BACKGROUND_SETTINGS = {
-  backgroundFarStarCount: 420,
-  backgroundNearStarCount: 180,
-  backgroundFarStarMinSize: 0.45,
-  backgroundFarStarMaxSize: 1.2,
-  backgroundNearStarMinSize: 0.9,
-  backgroundNearStarMaxSize: 2.2,
-  backgroundStarMinAlpha: 0.2,
-  backgroundStarMaxAlpha: 1,
-  backgroundStarHueMin: 200,
-  backgroundStarHueMax: 240,
-  backgroundFarParallax: 6,
-  backgroundNearParallax: 14,
-  backgroundFarDriftSeconds: 180,
-  backgroundNearDriftSeconds: 120,
-  backgroundPulseChance: 0.06
-};
-
-// src/settings/sections/general.ts
-var GENERAL_DEFAULTS = {
-  enableBackground: true,
-  enableParticles: true,
-  enableShootingStars: true,
-  enableMouseField: true,
-  enableParallax: true,
-  clickEffectMode: "radial",
-  particleCount: 220,
-  maxParticles: 1e3,
-  enableAutoSpawn: true,
-  autoSpawnIntervalMs: 1e3,
-  performanceMode: "balanced"
-};
-
-// src/settings/sections/universe.ts
-var UNIVERSE_DEFAULTS = {
-  autoSpawnAmount: 1,
-  initialCleanRadiusRatio: 0.28,
-  initialMinRadiusRatio: 0.28,
-  initialMaxRadiusRatio: 0.44,
-  initialClusterChance: 0.42,
-  starMinSize: 0.35,
-  starMaxSize: 1.45,
-  starHueMin: 200,
-  starHueMax: 260,
-  particleColor: "#7db7ff",
-  baseSpeed: 0.22,
-  particleGlow: 0.04,
-  particleBrightness: 1
-};
-
-// src/settings/sections/connections.ts
-var CONNECTION_DEFAULTS = {
-  enableConnections: true,
-  connectionDistance: 115,
-  connectionLineWidth: 0.35,
-  connectionColor: "120, 195, 255",
-  connectionBaseOpacity: 0.06,
-  maxConnectionsPerParticle: 4
-};
-
-// src/settings/sections/mouse.ts
-var MOUSE_DEFAULTS = {
-  enableMouseGlow: true,
-  mouseGlowRadius: 260,
-  mouseGlowConnectionOpacity: 0.22,
-  mouseGlowLineWidth: 0.55,
-  mouseGlowParticleAlpha: 0.22,
-  mouseGlowParticleSize: 0.45,
-  mouseFieldRadius: 130,
-  mouseRepulseStrength: 160
-};
-
-// src/settings/sections/bursts.ts
-var BURST_DEFAULTS = {
-  gravityCooldownMs: 2e3,
-  burstParticleLimit: 300,
-  burstGlowIntensity: 0.18,
-  burstGlowSize: 4.2,
-  radialBurstAmount: 34,
-  radialCoreAmount: 8,
-  directionalBurstAmount: 26,
-  directionalAngle: 0,
-  directionalSpread: 0.14,
-  gravityBurstAmount: 22,
-  gravityForce: 90,
-  gravityDurationMs: 3600,
-  gravityBounceDistance: 14
-};
-
-// src/settings/default.ts
-var DEFAULT_SETTINGS = {
-  ...GENERAL_DEFAULTS,
-  ...UNIVERSE_DEFAULTS,
-  ...CONNECTION_DEFAULTS,
-  ...MOUSE_DEFAULTS,
-  ...BURST_DEFAULTS,
-  ...DEFAULT_BACKGROUND_SETTINGS
-};
-
-// src/ui/cosmosControlView.ts
-var import_obsidian8 = require("obsidian");
+  });
+  new import_obsidian.Setting(section).setName("Far star min size").addSlider((slider) => {
+    slider.setLimits(0.1, 2, 0.1).setValue(plugin.settings.backgroundFarStarMinSize).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundFarStarMinSize = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Far star max size").addSlider((slider) => {
+    slider.setLimits(0.2, 4, 0.1).setValue(plugin.settings.backgroundFarStarMaxSize).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundFarStarMaxSize = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Near star min size").addSlider((slider) => {
+    slider.setLimits(0.2, 4, 0.1).setValue(plugin.settings.backgroundNearStarMinSize).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundNearStarMinSize = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Near star max size").addSlider((slider) => {
+    slider.setLimits(0.4, 6, 0.1).setValue(plugin.settings.backgroundNearStarMaxSize).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundNearStarMaxSize = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Minimum brightness").addSlider((slider) => {
+    slider.setLimits(0.05, 1, 0.05).setValue(plugin.settings.backgroundStarMinAlpha).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundStarMinAlpha = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Maximum brightness").addSlider((slider) => {
+    slider.setLimits(0.1, 1, 0.05).setValue(plugin.settings.backgroundStarMaxAlpha).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundStarMaxAlpha = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Hue min").setDesc("HSL hue value. 200 blue/cyan, 240 blue, 280 violet.").addSlider((slider) => {
+    slider.setLimits(0, 360, 1).setValue(plugin.settings.backgroundStarHueMin).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundStarHueMin = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Hue max").addSlider((slider) => {
+    slider.setLimits(0, 360, 1).setValue(plugin.settings.backgroundStarHueMax).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundStarHueMax = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Far parallax").addSlider((slider) => {
+    slider.setLimits(0, 30, 1).setValue(plugin.settings.backgroundFarParallax).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundFarParallax = value;
+      await plugin.saveSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Near parallax").addSlider((slider) => {
+    slider.setLimits(0, 50, 1).setValue(plugin.settings.backgroundNearParallax).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundNearParallax = value;
+      await plugin.saveSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Far drift duration").setDesc("Higher value = slower movement.").addSlider((slider) => {
+    slider.setLimits(40, 300, 5).setValue(plugin.settings.backgroundFarDriftSeconds).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundFarDriftSeconds = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Near drift duration").setDesc("Higher value = slower movement.").addSlider((slider) => {
+    slider.setLimits(40, 240, 5).setValue(plugin.settings.backgroundNearDriftSeconds).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundNearDriftSeconds = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+  new import_obsidian.Setting(section).setName("Pulse chance").setDesc("Percentage of stars that softly pulse.").addSlider((slider) => {
+    slider.setLimits(0, 0.4, 0.01).setValue(plugin.settings.backgroundPulseChance).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.backgroundPulseChance = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    });
+  });
+}
 
 // src/ui/renderGeneralSettings.ts
 var import_obsidian2 = require("obsidian");
-
-// src/ui/addSectionReset.ts
-function addSectionReset(section, plugin, keys) {
-  const button = section.headerEl.createEl("button", {
-    text: "Reset",
-    cls: "cosmos-section-reset-button"
-  });
-  button.onclick = async (event) => {
-    event.stopPropagation();
-    event.preventDefault();
-    for (const key of keys) {
-      plugin.settings[key] = DEFAULT_SETTINGS[key];
-    }
-    await plugin.saveSettings();
-    window.dispatchEvent(
-      new CustomEvent(
-        "cosmos-settings-reset"
-      )
-    );
-  };
-}
-
-// src/ui/createSettingSection.ts
-function createSettingSection(containerEl, title, options = {}) {
-  let isCollapsed = options.collapsed ?? false;
-  const sectionEl = containerEl.createDiv();
-  sectionEl.addClass("cosmos-settings-section");
-  const headerEl = sectionEl.createDiv();
-  headerEl.addClass("cosmos-settings-section-header");
-  const titleWrapperEl = headerEl.createDiv();
-  titleWrapperEl.addClass("cosmos-settings-section-title-wrapper");
-  const arrowEl = titleWrapperEl.createSpan();
-  arrowEl.addClass("cosmos-settings-section-arrow");
-  const titleEl = titleWrapperEl.createEl("h3", {
-    text: title
-  });
-  titleEl.addClass("cosmos-settings-section-title");
-  if (options.description) {
-    const descriptionEl = sectionEl.createEl("p", {
-      text: options.description
-    });
-    descriptionEl.addClass("cosmos-settings-section-description");
-  }
-  const contentEl = sectionEl.createDiv();
-  contentEl.addClass("cosmos-settings-section-content");
-  const applyCollapsedState = () => {
-    if (isCollapsed) {
-      sectionEl.addClass("is-collapsed");
-      contentEl.hide();
-      arrowEl.setText("\u25B6");
-    } else {
-      sectionEl.removeClass("is-collapsed");
-      contentEl.show();
-      arrowEl.setText("\u25BC");
-    }
-  };
-  const setCollapsed = (collapsed) => {
-    isCollapsed = collapsed;
-    applyCollapsedState();
-  };
-  const toggle = () => {
-    setCollapsed(!isCollapsed);
-  };
-  headerEl.addEventListener(
-    "click",
-    toggle
-  );
-  applyCollapsedState();
-  return {
-    rootEl: sectionEl,
-    headerEl,
-    contentEl,
-    setCollapsed,
-    toggle
-  };
-}
-
-// src/ui/renderGeneralSettings.ts
 function renderGeneralSettings(containerEl, plugin) {
   const section = createSettingSection(
     containerEl,
     "General",
-    {
-      description: "Global systems and basic behavior."
-    }
+    "Main visual systems and global interaction mode."
   );
-  addSectionReset(
-    section,
-    plugin,
-    [
-      "enableBackground",
-      "enableParticles",
-      "enableShootingStars",
-      "enableMouseField",
-      "enableParallax",
-      "clickEffectMode",
-      "particleCount",
-      "maxParticles",
-      "enableAutoSpawn",
-      "autoSpawnIntervalMs",
-      "performanceMode"
-    ]
-  );
-  const sectionEl = section.contentEl;
-  const performanceWarning = createPerformanceWarning(sectionEl);
-  const updatePerformanceWarning = () => {
-    updateGeneralPerformanceWarning(
-      performanceWarning,
-      plugin
-    );
-  };
-  updatePerformanceWarning();
-  new import_obsidian2.Setting(sectionEl).setName("Particles").setDesc("Enable or disable ambient particles.").addToggle(
+  new import_obsidian2.Setting(section).setName("Particles").setDesc("Enable or disable galaxy particles.").addToggle(
     (toggle) => toggle.setValue(plugin.settings.enableParticles).onChange(async (value) => {
       plugin.settings.enableParticles = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian2.Setting(sectionEl).setName("Shooting stars").setDesc("Enable or disable shooting stars.").addToggle(
+  new import_obsidian2.Setting(section).setName("Shooting stars").setDesc("Enable or disable shooting stars.").addToggle(
     (toggle) => toggle.setValue(plugin.settings.enableShootingStars).onChange(async (value) => {
       plugin.settings.enableShootingStars = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian2.Setting(sectionEl).setName("Click effect").setDesc("Choose what happens when clicking on the graph.").addDropdown(
-    (dropdown) => dropdown.addOption("none", "None").addOption("radial", "Radial burst").addOption("directional", "Directional burst").addOption("gravity", "Gravity burst").setValue(plugin.settings.clickEffectMode).onChange(async (value) => {
-      plugin.settings.clickEffectMode = value;
+  new import_obsidian2.Setting(section).setName("Mouse field").setDesc("Enable or disable particle reaction around the mouse.").addToggle(
+    (toggle) => toggle.setValue(plugin.settings.enableMouseField).onChange(async (value) => {
+      plugin.settings.enableMouseField = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian2.Setting(sectionEl).setName("Initial particles").setDesc("Amount of particles created when the graph opens.").addSlider(
-    (slider) => slider.setLimits(50, 1e4, 10).setValue(plugin.settings.particleCount).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.particleCount = value;
-      updatePerformanceWarning();
-      await plugin.saveSettings();
-    })
-  );
-  new import_obsidian2.Setting(sectionEl).setName("Max particles").setDesc("Maximum amount of particles allowed.").addSlider(
-    (slider) => slider.setLimits(50, 1e4, 50).setValue(plugin.settings.maxParticles).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.maxParticles = value;
-      updatePerformanceWarning();
-      await plugin.saveSettings();
-    })
-  );
-  new import_obsidian2.Setting(sectionEl).setName("Auto spawn").setDesc("Generate new particles progressively.").addToggle(
-    (toggle) => toggle.setValue(plugin.settings.enableAutoSpawn).onChange(async (value) => {
-      plugin.settings.enableAutoSpawn = value;
-      await plugin.saveSettings();
-    })
-  );
-  new import_obsidian2.Setting(sectionEl).setName("Auto spawn rate").setDesc("Time between automatic particle spawns, in milliseconds.").addSlider(
-    (slider) => slider.setLimits(250, 5e3, 250).setValue(plugin.settings.autoSpawnIntervalMs).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.autoSpawnIntervalMs = value;
-      await plugin.saveSettings();
-    })
-  );
-  new import_obsidian2.Setting(sectionEl).setName("Parallax").setDesc("Enable or disable parallax movement.").addToggle(
+  new import_obsidian2.Setting(section).setName("Parallax").setDesc("Enable or disable subtle background movement.").addToggle(
     (toggle) => toggle.setValue(plugin.settings.enableParallax).onChange(async (value) => {
       plugin.settings.enableParallax = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian2.Setting(sectionEl).setName("Performance mode").setDesc("Choose the global balance between visual quality and performance.").addDropdown(
-    (dropdown) => dropdown.addOption("quality", "Quality").addOption("balanced", "Balanced").addOption("performance", "Performance").setValue(plugin.settings.performanceMode).onChange(async (value) => {
-      applyPerformanceModePreset(
-        plugin,
-        value
-      );
-      updatePerformanceWarning();
+  new import_obsidian2.Setting(section).setName("Click effect").setDesc("Choose what happens when clicking on the graph.").addDropdown(
+    (dropdown) => dropdown.addOption("none", "None").addOption("radial", "Radial burst").addOption("directional", "Directional burst").addOption("gravity", "Gravity burst").setValue(plugin.settings.clickEffectMode).onChange(async (value) => {
+      plugin.settings.clickEffectMode = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-}
-function createPerformanceWarning(containerEl) {
-  return containerEl.createDiv({
-    cls: "cosmos-performance-warning"
-  });
-}
-function updateGeneralPerformanceWarning(warningEl, plugin) {
-  const warnings = [];
-  if (plugin.settings.particleCount >= 1500) {
-    warnings.push("Initial particles is very high.");
-  }
-  if (plugin.settings.maxParticles >= 2500) {
-    warnings.push("Max particles is very high.");
-  }
-  updateWarningElement(
-    warningEl,
-    warnings
-  );
-}
-function updateWarningElement(warningEl, warnings) {
-  warningEl.setText(
-    warnings.length > 0 ? `Performance warning: ${warnings.join(" ")}` : ""
-  );
-  warningEl.toggleClass(
-    "is-visible",
-    warnings.length > 0
-  );
-}
-function applyPerformanceModePreset(plugin, mode) {
-  plugin.settings.performanceMode = mode;
-  if (mode === "quality") {
-    plugin.settings.particleCount = 1400;
-    plugin.settings.maxParticles = 3e3;
-    plugin.settings.autoSpawnAmount = 4;
-    plugin.settings.autoSpawnIntervalMs = 900;
-    plugin.settings.enableConnections = true;
-    plugin.settings.connectionDistance = 260;
-    plugin.settings.maxConnectionsPerParticle = 8;
-    plugin.settings.backgroundFarStarCount = 700;
-    plugin.settings.backgroundNearStarCount = 320;
-    plugin.settings.enableShootingStars = true;
-    return;
-  }
-  if (mode === "balanced") {
-    plugin.settings.particleCount = 650;
-    plugin.settings.maxParticles = 1200;
-    plugin.settings.autoSpawnAmount = 2;
-    plugin.settings.autoSpawnIntervalMs = 1400;
-    plugin.settings.enableConnections = true;
-    plugin.settings.connectionDistance = 180;
-    plugin.settings.maxConnectionsPerParticle = 4;
-    plugin.settings.backgroundFarStarCount = 420;
-    plugin.settings.backgroundNearStarCount = 180;
-    plugin.settings.enableShootingStars = true;
-    return;
-  }
-  plugin.settings.particleCount = 260;
-  plugin.settings.maxParticles = 520;
-  plugin.settings.autoSpawnAmount = 1;
-  plugin.settings.autoSpawnIntervalMs = 2400;
-  plugin.settings.enableConnections = true;
-  plugin.settings.connectionDistance = 120;
-  plugin.settings.maxConnectionsPerParticle = 2;
-  plugin.settings.backgroundFarStarCount = 220;
-  plugin.settings.backgroundNearStarCount = 80;
-  plugin.settings.enableShootingStars = false;
 }
 
 // src/ui/renderUniverseSettings.ts
@@ -3925,209 +1939,156 @@ var import_obsidian3 = require("obsidian");
 function renderUniverseSettings(containerEl, plugin) {
   const section = createSettingSection(
     containerEl,
-    "Particles",
-    {
-      description: "Base appearance of ambient particles."
-    }
+    "Universe",
+    "Control star amount, size, color, speed and initial distribution."
   );
-  addSectionReset(
-    section,
-    plugin,
-    [
-      "autoSpawnAmount",
-      "initialCleanRadiusRatio",
-      "initialMinRadiusRatio",
-      "initialMaxRadiusRatio",
-      "initialClusterChance",
-      "starMinSize",
-      "starMaxSize",
-      "starHueMin",
-      "starHueMax",
-      "particleColor",
-      "baseSpeed",
-      "particleGlow",
-      "particleBrightness"
-    ]
+  new import_obsidian3.Setting(section).setName("Initial particles").setDesc("Amount of stars created when the graph opens.").addSlider(
+    (slider) => slider.setLimits(50, 700, 10).setValue(plugin.settings.particleCount).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.particleCount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
   );
-  const sectionEl = section.contentEl;
-  new import_obsidian3.Setting(sectionEl).setName("Particle base speed").setDesc("Base movement speed of ambient particles.").addSlider(
+  new import_obsidian3.Setting(section).setName("Max particles").setDesc("Maximum amount of ambient stars.").addSlider(
+    (slider) => slider.setLimits(50, 1e3, 10).setValue(plugin.settings.maxParticles).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.maxParticles = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian3.Setting(section).setName("Base speed").setDesc("Base movement speed of ambient stars.").addSlider(
     (slider) => slider.setLimits(0.02, 1, 0.02).setValue(plugin.settings.baseSpeed).setDynamicTooltip().onChange(async (value) => {
       plugin.settings.baseSpeed = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian3.Setting(sectionEl).setName("Particle color").setDesc("Base color used by ambient particles.").addColorPicker(
-    (color) => color.setValue(
-      getValidHexColor(
-        plugin.settings.particleColor
-      )
-    ).onChange(async (value) => {
-      const hue = hexToHue(value);
-      plugin.settings.particleColor = value;
-      plugin.settings.starHueMin = hue;
-      plugin.settings.starHueMax = hue;
+  new import_obsidian3.Setting(section).setName("Star min size").setDesc("Minimum size of ambient stars.").addSlider(
+    (slider) => slider.setLimits(0.1, 3, 0.05).setValue(plugin.settings.starMinSize).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.starMinSize = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian3.Setting(sectionEl).setName("Particle glow").setDesc("Base glow intensity of ambient particles.").addSlider(
-    (slider) => slider.setLimits(0, 0.4, 0.01).setValue(plugin.settings.particleGlow).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.particleGlow = value;
+  new import_obsidian3.Setting(section).setName("Star max size").setDesc("Maximum size of ambient stars.").addSlider(
+    (slider) => slider.setLimits(0.2, 5, 0.05).setValue(plugin.settings.starMaxSize).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.starMaxSize = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian3.Setting(sectionEl).setName("Particle brightness").setDesc("Brightness multiplier for ambient particles.").addSlider(
-    (slider) => slider.setLimits(0.2, 2, 0.05).setValue(plugin.settings.particleBrightness).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.particleBrightness = value;
+  new import_obsidian3.Setting(section).setName("Star hue min").setDesc("Minimum hue value for ambient stars.").addSlider(
+    (slider) => slider.setLimits(0, 360, 1).setValue(plugin.settings.starHueMin).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.starHueMin = value;
       await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-}
-function getValidHexColor(value) {
-  if (/^#[0-9a-fA-F]{6}$/.test(value)) {
-    return value;
-  }
-  return "#7db7ff";
-}
-function hexToHue(hex) {
-  const cleanHex = hex.replace("#", "");
-  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
-  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
-  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  if (delta === 0) {
-    return 0;
-  }
-  let hue = 0;
-  if (max === r) {
-    hue = (g - b) / delta % 6;
-  } else if (max === g) {
-    hue = (b - r) / delta + 2;
-  } else {
-    hue = (r - g) / delta + 4;
-  }
-  return Math.round((hue * 60 + 360) % 360);
+  new import_obsidian3.Setting(section).setName("Star hue max").setDesc("Maximum hue value for ambient stars.").addSlider(
+    (slider) => slider.setLimits(0, 360, 1).setValue(plugin.settings.starHueMax).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.starHueMax = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian3.Setting(section).setName("Clean center radius").setDesc("How empty the center starts.").addSlider(
+    (slider) => slider.setLimits(0.05, 0.5, 0.01).setValue(plugin.settings.initialCleanRadiusRatio).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.initialCleanRadiusRatio = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian3.Setting(section).setName("Periphery min radius").setDesc("Minimum initial distance from the center.").addSlider(
+    (slider) => slider.setLimits(0.05, 0.5, 0.01).setValue(plugin.settings.initialMinRadiusRatio).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.initialMinRadiusRatio = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian3.Setting(section).setName("Periphery max radius").setDesc("Maximum initial distance from the center.").addSlider(
+    (slider) => slider.setLimits(0.1, 0.6, 0.01).setValue(plugin.settings.initialMaxRadiusRatio).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.initialMaxRadiusRatio = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian3.Setting(section).setName("Constellation clustering").setDesc("Chance of stars grouping into constellation-like arcs.").addSlider(
+    (slider) => slider.setLimits(0, 1, 0.01).setValue(plugin.settings.initialClusterChance).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.initialClusterChance = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  const autoSpawnSection = createSettingSection(
+    containerEl,
+    "Auto Spawn",
+    "Control progressive star generation after the universe has started."
+  );
+  new import_obsidian3.Setting(autoSpawnSection).setName("Auto spawn").setDesc("Generate new stars progressively.").addToggle(
+    (toggle) => toggle.setValue(plugin.settings.enableAutoSpawn).onChange(async (value) => {
+      plugin.settings.enableAutoSpawn = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian3.Setting(autoSpawnSection).setName("Auto spawn interval").setDesc("Time between automatic star generation, in milliseconds.").addSlider(
+    (slider) => slider.setLimits(250, 5e3, 250).setValue(plugin.settings.autoSpawnIntervalMs).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.autoSpawnIntervalMs = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian3.Setting(autoSpawnSection).setName("Auto spawn amount").setDesc("How many stars are generated per interval.").addSlider(
+    (slider) => slider.setLimits(1, 10, 1).setValue(plugin.settings.autoSpawnAmount).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.autoSpawnAmount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
 }
 
 // src/ui/renderConnectionSettings.ts
 var import_obsidian4 = require("obsidian");
-
-// src/util/updateSetting.ts
-async function updateSetting(plugin, key, value) {
-  plugin.settings[key] = value;
-  await plugin.saveSettings();
-}
-
-// src/ui/renderConnectionSettings.ts
 function renderConnectionSettings(containerEl, plugin) {
   const section = createSettingSection(
     containerEl,
-    "Constellations",
-    {
-      description: "Control constellation lines, distance, thickness, opacity and color."
-    }
+    "Connections",
+    "Control constellation lines, distance, thickness, opacity and color."
   );
-  addSectionReset(
-    section,
-    plugin,
-    [
-      "enableConnections",
-      "connectionDistance",
-      "connectionLineWidth",
-      "connectionColor",
-      "connectionBaseOpacity",
-      "maxConnectionsPerParticle"
-    ]
-  );
-  const performanceWarning = createPerformanceWarning2(section.contentEl);
-  const updatePerformanceWarning = () => {
-    updateConnectionPerformanceWarning(
-      performanceWarning,
-      plugin
-    );
-  };
-  updatePerformanceWarning();
-  new import_obsidian4.Setting(section.contentEl).setName("Max connections per particle").setDesc("Maximum amount of constellation lines each particle can create.").addSlider(
-    (slider) => slider.setLimits(1, 12, 1).setValue(plugin.settings.maxConnectionsPerParticle).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.maxConnectionsPerParticle = value;
-      updatePerformanceWarning();
-      await plugin.saveSettings();
-    })
-  );
-  new import_obsidian4.Setting(section.contentEl).setName("Enable connections").setDesc("Enable or disable constellation lines.").addToggle(
+  new import_obsidian4.Setting(section).setName("Enable connections").setDesc("Enable or disable constellation lines.").addToggle(
     (toggle) => toggle.setValue(plugin.settings.enableConnections).onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "enableConnections",
-        value
-      );
+      plugin.settings.enableConnections = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian4.Setting(section.contentEl).setName("Connection distance").setDesc("Maximum distance between stars to create connections.").addSlider(
+  new import_obsidian4.Setting(section).setName("Connection distance").setDesc("Maximum distance between stars to create connections.").addSlider(
     (slider) => slider.setLimits(20, 400, 5).setValue(plugin.settings.connectionDistance).setDynamicTooltip().onChange(async (value) => {
       plugin.settings.connectionDistance = value;
-      updatePerformanceWarning();
-      await updateSetting(
-        plugin,
-        "connectionDistance",
-        value
-      );
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian4.Setting(section.contentEl).setName("Connection line width").setDesc("Thickness of constellation lines.").addSlider(
+  new import_obsidian4.Setting(section).setName("Connection line width").setDesc("Thickness of constellation lines.").addSlider(
     (slider) => slider.setLimits(0.05, 2, 0.05).setValue(plugin.settings.connectionLineWidth).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "connectionLineWidth",
-        value
-      );
+      plugin.settings.connectionLineWidth = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian4.Setting(section.contentEl).setName("Connection opacity").setDesc("Base opacity of constellation lines.").addSlider(
+  new import_obsidian4.Setting(section).setName("Connection opacity").setDesc("Base opacity of constellation lines.").addSlider(
     (slider) => slider.setLimits(0.01, 1, 0.01).setValue(plugin.settings.connectionBaseOpacity).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "connectionBaseOpacity",
-        value
-      );
+      plugin.settings.connectionBaseOpacity = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian4.Setting(section.contentEl).setName("Connection color").setDesc("Pick the color used for constellation lines.").addColorPicker(
+  new import_obsidian4.Setting(section).setName("Connection color").setDesc("Pick the color used for constellation lines.").addColorPicker(
     (color) => color.setValue(rgbToHex(plugin.settings.connectionColor)).onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "connectionColor",
-        hexToRgb(value)
-      );
+      plugin.settings.connectionColor = hexToRgb(value);
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
-  );
-}
-function createPerformanceWarning2(containerEl) {
-  return containerEl.createDiv({
-    cls: "cosmos-performance-warning"
-  });
-}
-function updateConnectionPerformanceWarning(warningEl, plugin) {
-  const warnings = [];
-  if (plugin.settings.connectionDistance >= 280) {
-    warnings.push("Connection distance is very high.");
-  }
-  if (plugin.settings.maxConnectionsPerParticle >= 8) {
-    warnings.push("Max connections per particle is very high.");
-  }
-  updateWarningElement2(
-    warningEl,
-    warnings
-  );
-}
-function updateWarningElement2(warningEl, warnings) {
-  warningEl.setText(
-    warnings.length > 0 ? `Performance warning: ${warnings.join(" ")}` : ""
-  );
-  warningEl.toggleClass(
-    "is-visible",
-    warnings.length > 0
   );
 }
 function rgbToHex(rgb) {
@@ -4163,98 +2124,67 @@ function renderMouseSettings(containerEl, plugin) {
   const glowSection = createSettingSection(
     containerEl,
     "Mouse Glow",
-    {
-      description: "Control the light effect around the mouse."
-    }
+    "Control how stars and connections light up near the mouse."
   );
-  addSectionReset(
-    glowSection,
-    plugin,
-    [
-      "enableMouseGlow",
-      "mouseGlowRadius",
-      "mouseGlowConnectionOpacity",
-      "mouseGlowLineWidth",
-      "mouseGlowParticleAlpha",
-      "mouseGlowParticleSize"
-    ]
-  );
-  new import_obsidian5.Setting(glowSection.contentEl).setName("Enable").setDesc("Enable glow near the mouse.").addToggle(
+  new import_obsidian5.Setting(glowSection).setName("Enable mouse glow").setDesc("Enable constellation glow near the mouse.").addToggle(
     (toggle) => toggle.setValue(plugin.settings.enableMouseGlow).onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "enableMouseGlow",
-        value
-      );
+      plugin.settings.enableMouseGlow = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian5.Setting(glowSection.contentEl).setName("Size").setDesc("How far the glow reaches.").addSlider(
+  new import_obsidian5.Setting(glowSection).setName("Mouse glow radius").setDesc("Radius where constellations light up near the mouse.").addSlider(
     (slider) => slider.setLimits(50, 600, 10).setValue(plugin.settings.mouseGlowRadius).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "mouseGlowRadius",
-        value
-      );
+      plugin.settings.mouseGlowRadius = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian5.Setting(glowSection.contentEl).setName("Connection Glow").setDesc("How much nearby connections light up.").addSlider(
+  new import_obsidian5.Setting(glowSection).setName("Mouse connection glow").setDesc("How much mouse proximity increases connection opacity.").addSlider(
     (slider) => slider.setLimits(0, 1, 0.01).setValue(plugin.settings.mouseGlowConnectionOpacity).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "mouseGlowConnectionOpacity",
-        value
-      );
+      plugin.settings.mouseGlowConnectionOpacity = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian5.Setting(glowSection.contentEl).setName("Particle Glow").setDesc("How much nearby particles light up.").addSlider(
+  new import_obsidian5.Setting(glowSection).setName("Mouse line width boost").setDesc("How much mouse proximity thickens connection lines.").addSlider(
+    (slider) => slider.setLimits(0, 3, 0.05).setValue(plugin.settings.mouseGlowLineWidth).setDynamicTooltip().onChange(async (value) => {
+      plugin.settings.mouseGlowLineWidth = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
+    })
+  );
+  new import_obsidian5.Setting(glowSection).setName("Mouse particle brightness").setDesc("How much nearby stars brighten around the mouse.").addSlider(
     (slider) => slider.setLimits(0, 1, 0.01).setValue(plugin.settings.mouseGlowParticleAlpha).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "mouseGlowParticleAlpha",
-        value
-      );
+      plugin.settings.mouseGlowParticleAlpha = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian5.Setting(glowSection.contentEl).setName("Particle Size").setDesc("How much nearby particles grow.").addSlider(
+  new import_obsidian5.Setting(glowSection).setName("Mouse particle size boost").setDesc("How much nearby stars grow around the mouse.").addSlider(
     (slider) => slider.setLimits(0, 3, 0.05).setValue(plugin.settings.mouseGlowParticleSize).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "mouseGlowParticleSize",
-        value
-      );
+      plugin.settings.mouseGlowParticleSize = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
   const fieldSection = createSettingSection(
     containerEl,
-    "Mouse Force",
-    {
-      description: "Control how the mouse pushes particles away."
-    }
+    "Mouse Field",
+    "Control the physical repulsion effect around the mouse."
   );
-  addSectionReset(
-    fieldSection,
-    plugin,
-    [
-      "mouseFieldRadius",
-      "mouseRepulseStrength"
-    ]
-  );
-  new import_obsidian5.Setting(fieldSection.contentEl).setName("Range").setDesc("How far the mouse force reaches.").addSlider(
+  new import_obsidian5.Setting(fieldSection).setName("Mouse field radius").setDesc("Radius of particle repulsion around the mouse.").addSlider(
     (slider) => slider.setLimits(20, 400, 5).setValue(plugin.settings.mouseFieldRadius).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "mouseFieldRadius",
-        value
-      );
+      plugin.settings.mouseFieldRadius = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian5.Setting(fieldSection.contentEl).setName("Strength").setDesc("How strongly the mouse pushes particles.").addSlider(
+  new import_obsidian5.Setting(fieldSection).setName("Mouse repulse strength").setDesc("Strength of mouse particle repulsion.").addSlider(
     (slider) => slider.setLimits(0, 500, 10).setValue(plugin.settings.mouseRepulseStrength).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "mouseRepulseStrength",
-        value
-      );
+      plugin.settings.mouseRepulseStrength = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
 }
@@ -4264,470 +2194,249 @@ var import_obsidian6 = require("obsidian");
 function renderBurstSettings(containerEl, plugin) {
   const burstSection = createSettingSection(
     containerEl,
-    "Burst",
-    {
-      description: "Shared behavior for click burst effects."
-    }
+    "Bursts",
+    "Control global burst behavior, cooldown and glow."
   );
-  addSectionReset(
-    burstSection,
-    plugin,
-    [
-      "gravityCooldownMs",
-      "burstParticleLimit",
-      "burstGlowIntensity",
-      "burstGlowSize"
-    ]
-  );
-  new import_obsidian6.Setting(burstSection.contentEl).setName("Cooldown").setDesc("Time before another burst can be used.").addSlider(
+  new import_obsidian6.Setting(burstSection).setName("Cooldown Burst").setDesc("Global cooldown for all burst effects, in seconds.").addSlider(
     (slider) => slider.setLimits(0.5, 8, 0.5).setValue(plugin.settings.gravityCooldownMs / 1e3).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "gravityCooldownMs",
-        value * 1e3
-      );
+      plugin.settings.gravityCooldownMs = value * 1e3;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian6.Setting(burstSection.contentEl).setName("Particle Limit").setDesc("Maximum amount of temporary burst particles.").addSlider(
+  new import_obsidian6.Setting(burstSection).setName("Burst particle limit").setDesc("Maximum amount of temporary burst particles.").addSlider(
     (slider) => slider.setLimits(20, 800, 10).setValue(plugin.settings.burstParticleLimit).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "burstParticleLimit",
-        value
-      );
+      plugin.settings.burstParticleLimit = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian6.Setting(burstSection.contentEl).setName("Glow").setDesc("Brightness of burst particle glow.").addSlider(
+  new import_obsidian6.Setting(burstSection).setName("Burst glow intensity").setDesc("Brightness of burst particle glow.").addSlider(
     (slider) => slider.setLimits(0, 1, 0.01).setValue(plugin.settings.burstGlowIntensity).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "burstGlowIntensity",
-        value
-      );
+      plugin.settings.burstGlowIntensity = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian6.Setting(burstSection.contentEl).setName("Glow Size").setDesc("Size of burst glow aura.").addSlider(
+  new import_obsidian6.Setting(burstSection).setName("Burst glow size").setDesc("Size of burst glow aura.").addSlider(
     (slider) => slider.setLimits(1, 10, 0.1).setValue(plugin.settings.burstGlowSize).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "burstGlowSize",
-        value
-      );
+      plugin.settings.burstGlowSize = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
   const radialSection = createSettingSection(
     containerEl,
     "Radial Burst",
-    {
-      description: "Control circular click explosions."
-    }
+    "Control circular click explosions."
   );
-  addSectionReset(
-    radialSection,
-    plugin,
-    [
-      "radialBurstAmount",
-      "radialCoreAmount"
-    ]
-  );
-  new import_obsidian6.Setting(radialSection.contentEl).setName("Amount").setDesc("Amount of particles in radial burst.").addSlider(
+  new import_obsidian6.Setting(radialSection).setName("Radial particles").setDesc("Amount of particles in radial burst.").addSlider(
     (slider) => slider.setLimits(5, 120, 1).setValue(plugin.settings.radialBurstAmount).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "radialBurstAmount",
-        value
-      );
+      plugin.settings.radialBurstAmount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian6.Setting(radialSection.contentEl).setName("Core Density").setDesc("Amount of slower particles near the center of radial burst.").addSlider(
+  new import_obsidian6.Setting(radialSection).setName("Radial core particles").setDesc("Amount of slower particles near the center of radial burst.").addSlider(
     (slider) => slider.setLimits(0, 60, 1).setValue(plugin.settings.radialCoreAmount).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "radialCoreAmount",
-        value
-      );
+      plugin.settings.radialCoreAmount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
   const directionalSection = createSettingSection(
     containerEl,
     "Directional Burst",
-    {
-      description: "Control cone-shaped bursts fired away from the graph center."
-    }
+    "Control cone-shaped bursts fired away from the graph center."
   );
-  addSectionReset(
-    directionalSection,
-    plugin,
-    [
-      "directionalBurstAmount",
-      "directionalAngle",
-      "directionalSpread"
-    ]
-  );
-  new import_obsidian6.Setting(directionalSection.contentEl).setName("Amount").setDesc("Amount of particles in directional burst.").addSlider(
+  new import_obsidian6.Setting(directionalSection).setName("Directional particles").setDesc("Amount of particles in directional burst.").addSlider(
     (slider) => slider.setLimits(5, 120, 1).setValue(plugin.settings.directionalBurstAmount).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "directionalBurstAmount",
-        value
-      );
+      plugin.settings.directionalBurstAmount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  createDirectionControl(
-    directionalSection.contentEl,
-    plugin
-  );
-  new import_obsidian6.Setting(directionalSection.contentEl).setName("Cone Width").setDesc("How wide the particle cone becomes.").addSlider(
+  new import_obsidian6.Setting(directionalSection).setName("Directional spread").setDesc("Opening angle of directional burst.").addSlider(
     (slider) => slider.setLimits(0.01, 1, 0.01).setValue(plugin.settings.directionalSpread).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "directionalSpread",
-        value
-      );
+      plugin.settings.directionalSpread = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
   const gravitySection = createSettingSection(
     containerEl,
     "Gravity Burst",
-    {
-      description: "Control click bursts that pull particles back toward the click point."
-    }
+    "Control click bursts that pull particles back toward the click point."
   );
-  addSectionReset(
-    gravitySection,
-    plugin,
-    [
-      "gravityBurstAmount",
-      "gravityForce",
-      "gravityDurationMs",
-      "gravityBounceDistance"
-    ]
-  );
-  new import_obsidian6.Setting(gravitySection.contentEl).setName("Amount").setDesc("Amount of particles in gravity burst.").addSlider(
+  new import_obsidian6.Setting(gravitySection).setName("Gravity particles").setDesc("Amount of particles in gravity burst.").addSlider(
     (slider) => slider.setLimits(5, 120, 1).setValue(plugin.settings.gravityBurstAmount).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "gravityBurstAmount",
-        value
-      );
+      plugin.settings.gravityBurstAmount = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian6.Setting(gravitySection.contentEl).setName("Gravity Strength").setDesc("Strength of attraction in this burst.").addSlider(
+  new import_obsidian6.Setting(gravitySection).setName("Gravity force").setDesc("Strength of attraction in gravity burst.").addSlider(
     (slider) => slider.setLimits(10, 300, 5).setValue(plugin.settings.gravityForce).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "gravityForce",
-        value
-      );
+      plugin.settings.gravityForce = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian6.Setting(gravitySection.contentEl).setName("Gravity Duration").setDesc("How long burst particles stay temporary.").addSlider(
+  new import_obsidian6.Setting(gravitySection).setName("Gravity duration").setDesc("Duration of gravity burst in milliseconds.").addSlider(
     (slider) => slider.setLimits(500, 8e3, 100).setValue(plugin.settings.gravityDurationMs).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "gravityDurationMs",
-        value
-      );
+      plugin.settings.gravityDurationMs = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-  new import_obsidian6.Setting(gravitySection.contentEl).setName("Collapse Distance").setDesc("Distance from the center where the pull tightens.").addSlider(
+  new import_obsidian6.Setting(gravitySection).setName("Gravity bounce distance").setDesc("Distance from center where particles bounce outward.").addSlider(
     (slider) => slider.setLimits(2, 80, 1).setValue(plugin.settings.gravityBounceDistance).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "gravityBounceDistance",
-        value
-      );
+      plugin.settings.gravityBounceDistance = value;
+      await plugin.saveSettings();
+      plugin.renderer?.reloadSettings();
     })
   );
-}
-function createDirectionControl(containerEl, plugin) {
-  const setting = new import_obsidian6.Setting(containerEl).setName("Shooting Direction").setDesc("Direction used by directional bursts.");
-  const padEl = setting.controlEl.createDiv({
-    cls: "cosmos-direction-control"
-  });
-  const lineEl = padEl.createDiv({
-    cls: "cosmos-direction-control-line"
-  });
-  const handleEl = padEl.createDiv({
-    cls: "cosmos-direction-control-handle"
-  });
-  const updateVisual = () => {
-    const angle = plugin.settings.directionalAngle;
-    const radius = 34;
-    const center = 44;
-    const x = center + Math.cos(angle) * radius;
-    const y = center + Math.sin(angle) * radius;
-    handleEl.style.left = `${x}px`;
-    handleEl.style.top = `${y}px`;
-    lineEl.style.transform = `rotate(${angle}rad)`;
-  };
-  const updateValue = async (event) => {
-    const rect = padEl.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const angle = Math.atan2(
-      event.clientY - centerY,
-      event.clientX - centerX
-    );
-    plugin.settings.directionalAngle = angle;
-    updateVisual();
-    await plugin.saveSettings();
-  };
-  let isDragging = false;
-  const handleMouseMove = (event) => {
-    if (!isDragging) {
-      return;
-    }
-    void updateValue(event);
-  };
-  const handleMouseUp = () => {
-    isDragging = false;
-    document.removeEventListener(
-      "mousemove",
-      handleMouseMove
-    );
-    document.removeEventListener(
-      "mouseup",
-      handleMouseUp
-    );
-  };
-  padEl.addEventListener(
-    "mousedown",
-    (event) => {
-      isDragging = true;
-      void updateValue(event);
-      document.addEventListener(
-        "mousemove",
-        handleMouseMove
-      );
-      document.addEventListener(
-        "mouseup",
-        handleMouseUp
-      );
-    }
-  );
-  updateVisual();
 }
 
-// src/ui/renderBackgroundSettings.ts
-var import_obsidian7 = require("obsidian");
-function renderBackgroundSettings(containerEl, plugin) {
-  const farSection = createSettingSection(
-    containerEl,
-    "Far Stars",
-    {
-      description: "Subtle stars behind the graph."
-    }
-  );
-  addSectionReset(
-    farSection,
-    plugin,
-    [
-      "backgroundFarStarCount",
-      "backgroundFarStarMinSize",
-      "backgroundFarStarMaxSize",
-      "backgroundFarParallax",
-      "backgroundFarDriftSeconds"
-    ]
-  );
-  new import_obsidian7.Setting(farSection.contentEl).setName("Amount").setDesc("Amount of stars.").addSlider((slider) => {
-    slider.setLimits(0, 1e3, 10).setValue(plugin.settings.backgroundFarStarCount).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "backgroundFarStarCount",
-        value
-      );
-    });
-  });
-  new import_obsidian7.Setting(farSection.contentEl).setName("Size").setDesc("Overall size of these stars.").addSlider((slider) => {
-    slider.setLimits(0.2, 3, 0.1).setValue(
-      getFarStarSize(
-        plugin
-      )
-    ).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.backgroundFarStarMinSize = value * 0.5;
-      plugin.settings.backgroundFarStarMaxSize = value * 1.4;
-      await plugin.saveSettings();
-    });
-  });
-  new import_obsidian7.Setting(farSection.contentEl).setName("Mouse movement").setDesc("How much these stars move with the mouse.").addSlider((slider) => {
-    slider.setLimits(0, 30, 1).setValue(plugin.settings.backgroundFarParallax).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "backgroundFarParallax",
-        value
-      );
-    });
-  });
-  const nearSection = createSettingSection(
-    containerEl,
-    "Near Stars",
-    {
-      description: "Brighter stars that sit closer to the graph."
-    }
-  );
-  addSectionReset(
-    nearSection,
-    plugin,
-    [
-      "backgroundNearStarCount",
-      "backgroundNearStarMinSize",
-      "backgroundNearStarMaxSize",
-      "backgroundNearParallax",
-      "backgroundNearDriftSeconds"
-    ]
-  );
-  new import_obsidian7.Setting(nearSection.contentEl).setName("Amount").setDesc("Amount of stars.").addSlider((slider) => {
-    slider.setLimits(0, 600, 10).setValue(plugin.settings.backgroundNearStarCount).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "backgroundNearStarCount",
-        value
-      );
-    });
-  });
-  new import_obsidian7.Setting(nearSection.contentEl).setName("Size").setDesc("Overall size of these stars.").addSlider((slider) => {
-    slider.setLimits(0.4, 5, 0.1).setValue(
-      getNearStarSize(
-        plugin
-      )
-    ).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.backgroundNearStarMinSize = value * 0.5;
-      plugin.settings.backgroundNearStarMaxSize = value * 1.4;
-      await plugin.saveSettings();
-    });
-  });
-  new import_obsidian7.Setting(nearSection.contentEl).setName("Mouse movement").setDesc("How much these stars move with the mouse.").addSlider((slider) => {
-    slider.setLimits(0, 50, 1).setValue(plugin.settings.backgroundNearParallax).setDynamicTooltip().onChange(async (value) => {
-      await updateSetting(
-        plugin,
-        "backgroundNearParallax",
-        value
-      );
-    });
-  });
-  const styleSection = createSettingSection(
-    containerEl,
-    "Star Style",
-    {
-      description: "Shared brightness and color for background stars."
-    }
-  );
-  addSectionReset(
-    styleSection,
-    plugin,
-    [
-      "backgroundStarMinAlpha",
-      "backgroundStarMaxAlpha",
-      "backgroundStarHueMin",
-      "backgroundStarHueMax",
-      "backgroundPulseChance"
-    ]
-  );
-  new import_obsidian7.Setting(styleSection.contentEl).setName("Brightness").setDesc("Overall brightness of background stars.").addSlider((slider) => {
-    slider.setLimits(0.1, 1, 0.05).setValue(
-      getStarBrightness(
-        plugin
-      )
-    ).setDynamicTooltip().onChange(async (value) => {
-      plugin.settings.backgroundStarMinAlpha = value * 0.25;
-      plugin.settings.backgroundStarMaxAlpha = value;
-      await plugin.saveSettings();
-    });
-  });
-  new import_obsidian7.Setting(styleSection.contentEl).setName("Color").setDesc("Base color of background stars.").addColorPicker((color) => {
-    color.setValue(
-      hueToHex(
-        getStarHue(plugin)
-      )
-    ).onChange(async (value) => {
-      const hue = hexToHue2(value);
-      plugin.settings.backgroundStarHueMin = hue - 12;
-      plugin.settings.backgroundStarHueMax = hue + 12;
-      await plugin.saveSettings();
-    });
-  });
-}
-function getFarStarSize(plugin) {
-  return (plugin.settings.backgroundFarStarMinSize + plugin.settings.backgroundFarStarMaxSize) / 2;
-}
-function getNearStarSize(plugin) {
-  return (plugin.settings.backgroundNearStarMinSize + plugin.settings.backgroundNearStarMaxSize) / 2;
-}
-function getStarBrightness(plugin) {
-  return plugin.settings.backgroundStarMaxAlpha;
-}
-function getStarHue(plugin) {
-  return (plugin.settings.backgroundStarHueMin + plugin.settings.backgroundStarHueMax) / 2;
-}
-function hueToHex(hue) {
-  const normalizedHue = (hue % 360 + 360) % 360;
-  const chroma = 1;
-  const x = chroma * (1 - Math.abs(
-    normalizedHue / 60 % 2 - 1
-  ));
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  if (normalizedHue < 60) {
-    r = chroma;
-    g = x;
-  } else if (normalizedHue < 120) {
-    r = x;
-    g = chroma;
-  } else if (normalizedHue < 180) {
-    g = chroma;
-    b = x;
-  } else if (normalizedHue < 240) {
-    g = x;
-    b = chroma;
-  } else if (normalizedHue < 300) {
-    r = x;
-    b = chroma;
-  } else {
-    r = chroma;
-    b = x;
+// src/settings/settingsTab.ts
+var CosmosSettingTab = class extends import_obsidian7.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
   }
-  const match = 0.7;
-  return "#" + toHex2((r + match) * 0.5 * 255) + toHex2((g + match) * 0.5 * 255) + toHex2((b + match) * 0.5 * 255);
-}
-function hexToHue2(hex) {
-  const cleanHex = hex.replace("#", "");
-  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
-  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
-  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  if (delta === 0) {
-    return 0;
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", {
+      text: "Cosmos Graph"
+    });
+    renderBackgroundSettings(
+      containerEl,
+      this.plugin
+    );
+    renderGeneralSettings(
+      containerEl,
+      this.plugin
+    );
+    renderUniverseSettings(
+      containerEl,
+      this.plugin
+    );
+    renderConnectionSettings(
+      containerEl,
+      this.plugin
+    );
+    renderMouseSettings(
+      containerEl,
+      this.plugin
+    );
+    renderBurstSettings(
+      containerEl,
+      this.plugin
+    );
   }
-  let hue = 0;
-  if (max === r) {
-    hue = (g - b) / delta % 6;
-  } else if (max === g) {
-    hue = (b - r) / delta + 2;
-  } else {
-    hue = (r - g) / delta + 4;
-  }
-  return Math.round((hue * 60 + 360) % 360);
-}
-function toHex2(value) {
-  return ("0" + Math.max(
-    0,
-    Math.min(255, Math.round(value))
-  ).toString(16)).slice(-2);
-}
+};
+
+// src/settings/sections/background.ts
+var DEFAULT_BACKGROUND_SETTINGS = {
+  backgroundFarStarCount: 420,
+  backgroundNearStarCount: 180,
+  backgroundFarStarMinSize: 0.45,
+  backgroundFarStarMaxSize: 1.2,
+  backgroundNearStarMinSize: 0.9,
+  backgroundNearStarMaxSize: 2.2,
+  backgroundStarMinAlpha: 0.2,
+  backgroundStarMaxAlpha: 1,
+  backgroundStarHueMin: 200,
+  backgroundStarHueMax: 240,
+  backgroundFarParallax: 6,
+  backgroundNearParallax: 14,
+  backgroundFarDriftSeconds: 180,
+  backgroundNearDriftSeconds: 120,
+  backgroundPulseChance: 0.06
+};
+
+// src/settings/sections/general.ts
+var GENERAL_DEFAULTS = {
+  enableParticles: true,
+  enableShootingStars: true,
+  enableMouseField: true,
+  enableParallax: true,
+  clickEffectMode: "radial"
+};
+
+// src/settings/sections/universe.ts
+var UNIVERSE_DEFAULTS = {
+  particleCount: 220,
+  maxParticles: 320,
+  enableAutoSpawn: true,
+  autoSpawnIntervalMs: 1e3,
+  autoSpawnAmount: 1,
+  initialCleanRadiusRatio: 0.28,
+  initialMinRadiusRatio: 0.28,
+  initialMaxRadiusRatio: 0.44,
+  initialClusterChance: 0.42,
+  starMinSize: 0.35,
+  starMaxSize: 1.45,
+  starHueMin: 200,
+  starHueMax: 260,
+  baseSpeed: 0.22
+};
+
+// src/settings/sections/connections.ts
+var CONNECTION_DEFAULTS = {
+  enableConnections: true,
+  connectionDistance: 115,
+  connectionLineWidth: 0.35,
+  connectionColor: "120, 195, 255",
+  connectionBaseOpacity: 0.06
+};
+
+// src/settings/sections/mouse.ts
+var MOUSE_DEFAULTS = {
+  enableMouseGlow: true,
+  mouseGlowRadius: 260,
+  mouseGlowConnectionOpacity: 0.22,
+  mouseGlowLineWidth: 0.55,
+  mouseGlowParticleAlpha: 0.22,
+  mouseGlowParticleSize: 0.45,
+  mouseFieldRadius: 130,
+  mouseRepulseStrength: 160
+};
+
+// src/settings/sections/bursts.ts
+var BURST_DEFAULTS = {
+  gravityCooldownMs: 2e3,
+  burstParticleLimit: 300,
+  burstGlowIntensity: 0.18,
+  burstGlowSize: 4.2,
+  radialBurstAmount: 34,
+  radialCoreAmount: 8,
+  directionalBurstAmount: 26,
+  directionalSpread: 0.14,
+  gravityBurstAmount: 22,
+  gravityForce: 90,
+  gravityDurationMs: 3600,
+  gravityBounceDistance: 14
+};
+
+// src/settings/default.ts
+var DEFAULT_SETTINGS = {
+  ...GENERAL_DEFAULTS,
+  ...UNIVERSE_DEFAULTS,
+  ...CONNECTION_DEFAULTS,
+  ...MOUSE_DEFAULTS,
+  ...BURST_DEFAULTS,
+  ...DEFAULT_BACKGROUND_SETTINGS
+};
 
 // src/ui/cosmosControlView.ts
+var import_obsidian8 = require("obsidian");
 var COSMOS_CONTROL_VIEW_TYPE = "cosmos-control-view";
 var CosmosControlView = class extends import_obsidian8.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
-    this.handleSettingsReset = () => {
-      this.render();
-    };
   }
   getViewType() {
     return COSMOS_CONTROL_VIEW_TYPE;
@@ -4739,46 +2448,17 @@ var CosmosControlView = class extends import_obsidian8.ItemView {
     return "sparkles";
   }
   async onOpen() {
-    window.addEventListener(
-      "cosmos-settings-reset",
-      this.handleSettingsReset
-    );
     this.render();
   }
   async onClose() {
-    window.removeEventListener(
-      "cosmos-settings-reset",
-      this.handleSettingsReset
-    );
   }
   render() {
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass("cosmos-control-panel");
-    const header = container.createDiv({
-      cls: "cosmos-control-header"
-    });
-    header.createEl("h2", {
+    container.createEl("h2", {
       text: "Cosmos Control"
     });
-    const headerActions = header.createDiv({
-      cls: "cosmos-control-header-actions"
-    });
-    const resetAllButton = headerActions.createEl("button", {
-      text: "Reset all",
-      cls: "cosmos-control-reset-all-button"
-    });
-    resetAllButton.onclick = async () => {
-      await this.plugin.resetSettings();
-      this.render();
-    };
-    const closeButton = headerActions.createEl("button", {
-      text: "x",
-      cls: "cosmos-control-close-button"
-    });
-    closeButton.onclick = async () => {
-      await this.leaf.detach();
-    };
     container.createEl("p", {
       text: "Live visual controls for Cosmos Graph."
     });
@@ -4813,7 +2493,7 @@ var CosmosControlView = class extends import_obsidian8.ItemView {
 var CosmosGraphPlugin = class extends import_obsidian9.Plugin {
   constructor() {
     super(...arguments);
-    this.settings = structuredClone(DEFAULT_SETTINGS);
+    this.settings = DEFAULT_SETTINGS;
     this.renderer = null;
   }
   async onload() {
@@ -4822,10 +2502,7 @@ var CosmosGraphPlugin = class extends import_obsidian9.Plugin {
     this.renderer.start();
     this.registerView(
       COSMOS_CONTROL_VIEW_TYPE,
-      (leaf) => new CosmosControlView(
-        leaf,
-        this
-      )
+      (leaf) => new CosmosControlView(leaf, this)
     );
     this.addRibbonIcon(
       "sparkles",
@@ -4842,10 +2519,7 @@ var CosmosGraphPlugin = class extends import_obsidian9.Plugin {
       }
     });
     this.addSettingTab(
-      new CosmosSettingTab(
-        this.app,
-        this
-      )
+      new CosmosSettingTab(this.app, this)
     );
   }
   onunload() {
@@ -4860,23 +2534,15 @@ var CosmosGraphPlugin = class extends import_obsidian9.Plugin {
     );
   }
   async saveSettings() {
-    await this.saveData(
-      this.settings
-    );
+    await this.saveData(this.settings);
     this.renderer?.reloadSettings();
-  }
-  async resetSettings() {
-    this.settings = structuredClone(
-      DEFAULT_SETTINGS
-    );
-    await this.saveSettings();
   }
   async activateCosmosControlView() {
     const leaves = this.app.workspace.getLeavesOfType(
       COSMOS_CONTROL_VIEW_TYPE
     );
     if (leaves.length > 0) {
-      await leaves[0].detach();
+      this.app.workspace.revealLeaf(leaves[0]);
       return;
     }
     const leaf = this.app.workspace.getRightLeaf(false);

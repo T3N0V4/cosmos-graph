@@ -1,13 +1,24 @@
-import { clamp } from "../util/math";
-import { randomFloat, randomChance } from "../util/random";
-import { CanvasLayer } from "./canvasLayer";
-import type { Galaxy } from "../entitites/Galaxy";
-import type { Planet } from "../entitites/Planet";
+export type CosmicObjectKind =
+    | "planet"
+    | "galaxy";
 
-import {
-    createRadialGlow,
-    drawFilledCircle
-} from "../util/canvas";
+type CosmicObject = {
+    kind: CosmicObjectKind;
+
+    x: number;
+    y: number;
+
+    radius: number;
+    hue: number;
+    alpha: number;
+
+    depth: number;
+
+    rotation: number;
+    rotationSpeed: number;
+
+    hasRing?: boolean;
+};
 
 type MouseState = {
     x: number;
@@ -15,16 +26,9 @@ type MouseState = {
     radius: number;
 };
 
-type PositionedCosmicEntity = {
-    x: number;
-    y: number;
-    depth: number;
-};
-
 export class CosmicObjects {
-    private galaxies: Galaxy[] = [];
-    private planets: Planet[] = [];
-    
+    private objects: CosmicObject[] = [];
+
     private zoom = 1;
     private targetZoom = 1;
 
@@ -32,8 +36,7 @@ export class CosmicObjects {
         width: number,
         height: number
     ) {
-        this.galaxies = [];
-        this.planets = [];
+        this.objects = [];
 
         this.createGalaxies(width, height);
         this.createPlanets(width, height);
@@ -42,7 +45,7 @@ export class CosmicObjects {
     handleWheel(deltaY: number) {
         const direction = deltaY < 0 ? 1 : -1;
 
-        this.targetZoom = clamp(
+        this.targetZoom = this.clamp(
             this.targetZoom + direction * 0.06,
             0.78,
             1.45
@@ -53,15 +56,9 @@ export class CosmicObjects {
         this.zoom +=
             (this.targetZoom - this.zoom) * 0.08;
 
-        for (const galaxy of this.galaxies) {
-            galaxy.rotation +=
-                galaxy.rotationSpeed *
-                delta;
-        }
-
-        for (const planet of this.planets) {
-            planet.rotation +=
-                planet.rotationSpeed *
+        for (const object of this.objects) {
+            object.rotation +=
+                object.rotationSpeed *
                 delta;
         }
     }
@@ -72,28 +69,28 @@ export class CosmicObjects {
         mouse: MouseState,
         enableParallax: boolean
     ) {
-        for (const galaxy of this.galaxies) {
-            this.drawGalaxy(
-                ctx,
-                galaxy,
-                mouse,
-                enableParallax
-            );
+        for (const object of this.objects) {
+            if (object.kind === "galaxy") {
+                this.drawGalaxy(
+                    ctx,
+                    object,
+                    mouse,
+                    enableParallax
+                );
+            }
         }
 
-        for (const planet of this.planets) {
-            this.drawPlanet(
-                ctx,
-                planet,
-                time,
-                mouse,
-                enableParallax
-            );
+        for (const object of this.objects) {
+            if (object.kind === "planet") {
+                this.drawPlanet(
+                    ctx,
+                    object,
+                    time,
+                    mouse,
+                    enableParallax
+                );
+            }
         }
-    }
-
-    applySettings(_settings: unknown) {
-        // Planetas configurables más adelante.
     }
 
     private createGalaxies(
@@ -101,35 +98,37 @@ export class CosmicObjects {
         height: number
     ) {
         const amount = Math.floor(
-            randomFloat(2, 4)
+            this.random(2, 4)
         );
 
         for (let i = 0; i < amount; i++) {
-            this.galaxies.push({
-                x: randomFloat(
+            this.objects.push({
+                kind: "galaxy",
+
+                x: this.random(
                     width * 0.1,
                     width * 0.9
                 ),
 
-                y: randomFloat(
+                y: this.random(
                     height * 0.1,
                     height * 0.9
                 ),
 
-                radius: randomFloat(120, 210),
+                radius: this.random(120, 210),
 
-                hue: randomFloat(205, 275),
+                hue: this.random(205, 275),
 
-                alpha: randomFloat(0.09, 0.16),
+                alpha: this.random(0.09, 0.16),
 
-                depth: randomFloat(0.06, 0.22),
+                depth: this.random(0.06, 0.22),
 
-                rotation: randomFloat(
+                rotation: this.random(
                     0,
                     Math.PI * 2
                 ),
 
-                rotationSpeed: randomFloat(
+                rotationSpeed: this.random(
                     -0.000035,
                     0.000035
                 )
@@ -142,63 +141,65 @@ export class CosmicObjects {
         height: number
     ) {
         const amount = Math.floor(
-            randomFloat(2, 5)
+            this.random(2, 5)
         );
 
         for (let i = 0; i < amount; i++) {
-            this.planets.push({
-                x: randomFloat(
+            this.objects.push({
+                kind: "planet",
+
+                x: this.random(
                     width * 0.12,
                     width * 0.88
                 ),
 
-                y: randomFloat(
+                y: this.random(
                     height * 0.12,
                     height * 0.88
                 ),
 
-                radius: randomFloat(20, 42),
+                radius: this.random(20, 42),
 
-                hue: randomFloat(185, 295),
+                hue: this.random(185, 295),
 
-                alpha: randomFloat(0.34, 0.52),
+                alpha: this.random(0.34, 0.52),
 
-                depth: randomFloat(0.24, 0.52),
+                depth: this.random(0.24, 0.52),
 
-                rotation: randomFloat(
+                rotation: this.random(
                     0,
                     Math.PI * 2
                 ),
 
-                rotationSpeed: randomFloat(
+                rotationSpeed: this.random(
                     -0.00008,
                     0.00008
                 ),
 
-                hasRing: randomChance(0.5)
+                hasRing: Math.random() < 0.5
             });
         }
     }
 
     private drawGalaxy(
         ctx: CanvasRenderingContext2D,
-        galaxy: Galaxy,
+        object: CosmicObject,
         mouse: MouseState,
         enableParallax: boolean
     ) {
         const position =
             this.getRenderPosition(
                 ctx,
-                galaxy,
+                object,
                 mouse,
                 enableParallax
             );
 
         const scale =
-            this.getZoomScale(galaxy);
+            this.getZoomScale(object);
 
         const radius =
-            galaxy.radius * scale;
+            object.radius * scale;
 
         ctx.save();
 
@@ -207,53 +208,59 @@ export class CosmicObjects {
             position.y
         );
 
-        ctx.rotate(galaxy.rotation);
+        ctx.rotate(object.rotation);
 
         ctx.scale(1, 0.34);
 
-        const gradient = createRadialGlow(
-            ctx,
+        const gradient =
+            ctx.createRadialGradient(
+                0,
+                0,
+                0,
+                0,
+                0,
+                radius
+            );
+
+        gradient.addColorStop(
             0,
-            0,
-            radius,
-            `hsla(${galaxy.hue}, 85%, 76%, ${galaxy.alpha})`,
-            `hsla(${galaxy.hue}, 80%, 50%, 0)`,
-            {
-                colorStops: [
-                    {
-                        offset: 0,
-                        color: `hsla(${galaxy.hue}, 85%, 76%, ${galaxy.alpha})`
-                    },
-                    {
-                        offset: 0.28,
-                        color: `hsla(${galaxy.hue + 18}, 78%, 62%, ${galaxy.alpha * 0.62})`
-                    },
-                    {
-                        offset: 0.65,
-                        color: `hsla(${galaxy.hue - 20}, 70%, 45%, ${galaxy.alpha * 0.22})`
-                    },
-                    {
-                        offset: 1,
-                        color: `hsla(${galaxy.hue}, 80%, 50%, 0)`
-                    }
-                ]
-            }
+            `hsla(${object.hue}, 85%, 76%, ${object.alpha})`
         );
 
-        drawFilledCircle(
-            ctx,
+        gradient.addColorStop(
+            0.28,
+            `hsla(${object.hue + 18}, 78%, 62%, ${object.alpha * 0.62})`
+        );
+
+        gradient.addColorStop(
+            0.65,
+            `hsla(${object.hue - 20}, 70%, 45%, ${object.alpha * 0.22})`
+        );
+
+        gradient.addColorStop(
+            1,
+            `hsla(${object.hue}, 80%, 50%, 0)`
+        );
+
+        ctx.beginPath();
+        ctx.fillStyle = gradient;
+
+        ctx.arc(
             0,
             0,
             radius,
-            gradient
+            0,
+            Math.PI * 2
         );
+
+        ctx.fill();
 
         ctx.restore();
     }
 
     private drawPlanet(
         ctx: CanvasRenderingContext2D,
-        planet: Planet,
+        object: CosmicObject,
         time: number,
         mouse: MouseState,
         enableParallax: boolean
@@ -261,22 +268,22 @@ export class CosmicObjects {
         const position =
             this.getRenderPosition(
                 ctx,
-                planet,
+                object,
                 mouse,
                 enableParallax
             );
 
         const scale =
-            this.getZoomScale(planet);
+            this.getZoomScale(object);
 
         const radius =
-            planet.radius * scale;
+            object.radius * scale;
 
         const pulse =
             0.9 +
             Math.sin(
                 time * 0.00045 +
-                planet.radius
+                object.radius
             ) * 0.1;
 
         ctx.save();
@@ -286,9 +293,9 @@ export class CosmicObjects {
             position.y
         );
 
-        ctx.rotate(planet.rotation);
+        ctx.rotate(object.rotation);
 
-        if (planet.hasRing) {
+        if (object.hasRing) {
             ctx.save();
 
             ctx.rotate(-0.4);
@@ -296,7 +303,7 @@ export class CosmicObjects {
             ctx.beginPath();
 
             ctx.strokeStyle =
-                `hsla(${planet.hue}, 58%, 76%, ${planet.alpha * 0.9})`;
+                `hsla(${object.hue}, 58%, 76%, ${object.alpha * 0.9})`;
 
             ctx.lineWidth = 1.2;
 
@@ -315,76 +322,98 @@ export class CosmicObjects {
             ctx.restore();
         }
 
-        const glow = createRadialGlow(
-            ctx,
+        const glow =
+            ctx.createRadialGradient(
+                0,
+                0,
+                radius * 0.2,
+                0,
+                0,
+                radius * 3.4
+            );
+
+        glow.addColorStop(
+            0,
+            `hsla(${object.hue}, 82%, 72%, ${object.alpha * 0.32 * pulse})`
+        );
+
+        glow.addColorStop(
+            1,
+            `hsla(${object.hue}, 80%, 70%, 0)`
+        );
+
+        ctx.beginPath();
+        ctx.fillStyle = glow;
+
+        ctx.arc(
             0,
             0,
             radius * 3.4,
-            `hsla(${planet.hue}, 82%, 72%, ${planet.alpha * 0.32 * pulse})`,
-            `hsla(${planet.hue}, 80%, 70%, 0)`,
-            {
-                innerRadius: radius * 0.2
-            }
+            0,
+            Math.PI * 2
         );
 
-        drawFilledCircle(
-            ctx,
+        ctx.fill();
+
+        const body =
+            ctx.createRadialGradient(
+                -radius * 0.35,
+                -radius * 0.35,
+                radius * 0.1,
+                0,
+                0,
+                radius
+            );
+
+        body.addColorStop(
             0,
-            0,
-            radius * 3.4,
-            glow
+            `hsla(${object.hue + 14}, 72%, 78%, ${object.alpha})`
         );
 
-        const body = createRadialGlow(
-            ctx,
+        body.addColorStop(
+            0.55,
+            `hsla(${object.hue}, 64%, 50%, ${object.alpha * 0.95})`
+        );
+
+        body.addColorStop(
+            1,
+            `hsla(${object.hue - 24}, 62%, 24%, ${object.alpha * 0.8})`
+        );
+
+        ctx.beginPath();
+        ctx.fillStyle = body;
+
+        ctx.arc(
             0,
             0,
             radius,
-            `hsla(${planet.hue + 14}, 72%, 78%, ${planet.alpha})`,
-            `hsla(${planet.hue - 24}, 62%, 24%, ${planet.alpha * 0.8})`,
-            {
-                innerX: -radius * 0.35,
-                innerY: -radius * 0.35,
-                innerRadius: radius * 0.1,
-                colorStops: [
-                    {
-                        offset: 0,
-                        color: `hsla(${planet.hue + 14}, 72%, 78%, ${planet.alpha})`
-                    },
-                    {
-                        offset: 0.55,
-                        color: `hsla(${planet.hue}, 64%, 50%, ${planet.alpha * 0.95})`
-                    },
-                    {
-                        offset: 1,
-                        color: `hsla(${planet.hue - 24}, 62%, 24%, ${planet.alpha * 0.8})`
-                    }
-                ]
-            }
+            0,
+            Math.PI * 2
         );
 
-        drawFilledCircle(
-            ctx,
-            0,
-            0,
-            radius,
-            body
-        );
+        ctx.fill();
 
-        drawFilledCircle(
-            ctx,
+        ctx.beginPath();
+
+        ctx.fillStyle =
+            `rgba(0, 0, 0, ${object.alpha * 0.42})`;
+
+        ctx.arc(
             radius * 0.28,
             radius * 0.12,
             radius * 0.95,
-            `rgba(0, 0, 0, ${planet.alpha * 0.42})`
+            0,
+            Math.PI * 2
         );
+
+        ctx.fill();
 
         ctx.restore();
     }
 
     private getRenderPosition(
         ctx: CanvasRenderingContext2D,
-        entity: PositionedCosmicEntity,
+        object: CosmicObject,
         mouse: MouseState,
         enableParallax: boolean
     ) {
@@ -395,11 +424,11 @@ export class CosmicObjects {
             ctx.canvas.clientHeight / 2;
 
         const zoomInfluence =
-            0.18 + entity.depth * 0.65;
+            0.18 + object.depth * 0.65;
 
         const zoomedX =
             centerX +
-            (entity.x - centerX) *
+            (object.x - centerX) *
             (
                 1 +
                 (this.zoom - 1) *
@@ -408,7 +437,7 @@ export class CosmicObjects {
 
         const zoomedY =
             centerY +
-            (entity.y - centerY) *
+            (object.y - centerY) *
             (
                 1 +
                 (this.zoom - 1) *
@@ -432,8 +461,7 @@ export class CosmicObjects {
         const offsetY =
             (mouse.y - centerY) / centerY;
 
-        const parallaxStrength =
-            32 * (1 - entity.depth);
+        const parallaxStrength = 32 * (1 - object.depth);
 
         return {
             x: zoomedX - offsetX * parallaxStrength,
@@ -442,10 +470,10 @@ export class CosmicObjects {
     }
 
     private getZoomScale(
-        entity: PositionedCosmicEntity
+        object: CosmicObject
     ) {
         const zoomInfluence =
-            0.22 + entity.depth * 0.55;
+            0.22 + object.depth * 0.55;
 
         return (
             1 +
@@ -453,4 +481,25 @@ export class CosmicObjects {
             zoomInfluence
         );
     }
+
+    private random(
+        min: number,
+        max: number
+    ) {
+        return min + Math.random() * (max - min);
+    }
+
+    private clamp(
+        value: number,
+        min: number,
+        max: number
+    ) {
+        return Math.max(
+            min,
+            Math.min(max, value)
+        );
+    }
+    applySettings(_settings: unknown) {
+    // Planetas configurables más adelante.
+}
 }

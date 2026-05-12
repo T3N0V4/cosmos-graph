@@ -9,7 +9,6 @@ export interface BurstSettings {
     radialCoreAmount: number;
 
     directionalBurstAmount: number;
-    directionalAngle: number;
     directionalSpread: number;
 
     gravityBurstAmount: number;
@@ -29,7 +28,6 @@ export const BURST_DEFAULTS: BurstSettings = {
     radialCoreAmount: 8,
 
     directionalBurstAmount: 26,
-    directionalAngle: 0,
     directionalSpread: 0.14,
 
     gravityBurstAmount: 22,

@@ -2,435 +2,269 @@
 .workspace-leaf-content[data-type="localgraph"] .view-content {
     position: relative !important;
     overflow: hidden !important;
-    background: #00020a !important;
 }
 
-/* CONTENEDOR BACKGROUND */
-.cosmos-background-root {
+.cosmos-animation-canvas {
     position: absolute !important;
     inset: 0 !important;
 
-    z-index: 1 !important;
+    width: 100% !important;
+    height: 100% !important;
 
+    z-index: 5 !important;
+
+    pointer-events: none !important;
+
+    opacity: 1 !important;
+
+    mix-blend-mode: screen !important;
+
+    filter: none !important;
+}
+
+.workspace-leaf-content[data-type="graph"] .graph-controls,
+.workspace-leaf-content[data-type="localgraph"] .graph-controls {
+    position: relative !important;
+    z-index: 100 !important;
+}
+
+.cosmos-settings-section {
+    position: relative;
+    overflow: hidden;
+
+    margin-bottom: 22px;
+    padding: 22px 20px;
+
+    border-radius: 18px;
+    border: 1px solid rgba(120, 170, 255, 0.18);
+
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(120, 90, 255, 0.16),
+            transparent 34%
+        ),
+        linear-gradient(
+            180deg,
+            rgba(30, 36, 54, 0.72),
+            rgba(18, 20, 28, 0.82)
+        );
+
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.025) inset,
+        0 18px 50px rgba(0, 0, 0, 0.22);
+}
+
+.cosmos-settings-section::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+
+    pointer-events: none;
+
+    background:
+        linear-gradient(
+            120deg,
+            rgba(140, 190, 255, 0.12),
+            transparent 28%,
+            transparent 72%,
+            rgba(160, 110, 255, 0.1)
+        );
+}
+
+.cosmos-settings-section-title {
+    position: relative;
+
+    margin-top: 0 !important;
+    margin-bottom: 8px !important;
+
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+
+    color: rgba(235, 245, 255, 0.95);
+}
+
+.cosmos-settings-section-description {
+    position: relative;
+
+    margin-top: 0;
+    margin-bottom: 20px;
+
+    color: rgba(220, 230, 255, 0.68);
+    line-height: 1.5;
+}
+
+.cosmos-settings-section .setting-item {
+    position: relative;
+
+    margin-bottom: 8px;
+    padding: 13px 16px;
+
+    border-radius: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.035);
+
+    background: rgba(255, 255, 255, 0.025);
+
+    transition:
+        background 140ms ease,
+        border-color 140ms ease,
+        transform 140ms ease;
+}
+
+.cosmos-settings-section .setting-item:hover {
+    transform: translateY(-1px);
+
+    border-color: rgba(130, 180, 255, 0.18);
+    background: rgba(120, 170, 255, 0.055);
+}
+
+.cosmos-settings-section .setting-item-name {
+    color: rgba(245, 248, 255, 0.92);
+    font-weight: 600;
+}
+
+.cosmos-settings-section .setting-item-description {
+    color: rgba(220, 225, 240, 0.62);
+}
+
+.cosmos-settings-section .checkbox-container {
+    box-shadow:
+        0 0 14px rgba(130, 90, 255, 0.28);
+}
+/*
+========================================
+OBSIDIAN SLIDER OVERRIDE
+========================================
+*/
+
+.cosmos-settings-section .slider {
+    height: 6px !important;
+
+    border-radius: 999px;
+
+    background:
+        linear-gradient(
+            90deg,
+            rgba(120, 190, 255, 0.9),
+            rgba(170, 110, 255, 0.9)
+        ) !important;
+
+    box-shadow:
+        0 0 12px rgba(120, 190, 255, 0.18);
+
+    overflow: visible;
+
+    position: relative;
+}
+
+/*
+========================================
+SLIDER THUMB
+========================================
+*/
+
+.cosmos-settings-section .slider-thumb {
+    width: 18px !important;
+    height: 18px !important;
+
+    border-radius: 50% !important;
+
+    border:
+        2px solid rgba(255,255,255,0.75) !important;
+
+    background:
+        radial-gradient(
+            circle at 35% 35%,
+            rgba(255,255,255,0.95),
+            rgba(170,210,255,0.92) 45%,
+            rgba(130,110,255,0.95)
+        ) !important;
+
+    box-shadow:
+        0 0 16px rgba(130, 170, 255, 0.55),
+        0 0 32px rgba(140, 90, 255, 0.25) !important;
+
+    transition:
+        transform 120ms ease,
+        box-shadow 120ms ease;
+}
+
+.cosmos-settings-section .slider-thumb:hover {
+    transform: scale(1.08);
+
+    box-shadow:
+        0 0 22px rgba(140, 210, 255, 0.7),
+        0 0 42px rgba(150, 100, 255, 0.35) !important;
+}
+
+/*
+========================================
+SLIDER FILLED
+========================================
+*/
+
+.cosmos-settings-section .slider-track {
+    border-radius: 999px;
+}
+
+.cosmos-background-layer {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 0 !important;
     pointer-events: none !important;
     overflow: hidden !important;
 }
 
-/* CAPA 1: ESTRELLAS LEJANAS */
-.cosmos-background-far-canvas {
+.cosmos-background-canvas {
     position: absolute !important;
     inset: 0 !important;
-
-    width: 100% !important;
-    height: 100% !important;
-
-    z-index: 1 !important;
-
+    z-index: 0 !important;
     pointer-events: none !important;
 }
 
-/* CAPA 2: ESTRELLAS CERCANAS */
-.cosmos-background-near-canvas {
-    position: absolute !important;
-    inset: 0 !important;
-
-    width: 100% !important;
-    height: 100% !important;
-
-    z-index: 2 !important;
-
+.cosmos-animation-canvas {
+    z-index: 5 !important;
     pointer-events: none !important;
-}
-
-/* CAPA 3: PARTICLES / COSMOS */
-.cosmos-graph-canvas {
-    position: absolute !important;
-    inset: 0 !important;
-
-    width: 100% !important;
-    height: 100% !important;
-
-    z-index: 3 !important;
-
-    pointer-events: none !important;
-
     opacity: 1 !important;
     mix-blend-mode: screen !important;
     filter: none !important;
 }
 
-/* CAPA 10: UI */
-.cosmos-reset-stars-button {
-    position: absolute;
-
-    right: 14px;
-    bottom: 14px;
-
-    z-index: 10;
-
-    padding: 6px 10px;
-
-    border: 1px solid rgba(160, 190, 255, 0.35);
-    border-radius: 8px;
-
-    background: rgba(5, 10, 24, 0.75);
-    color: rgba(220, 235, 255, 0.9);
-
-    font-size: 12px;
-
-    cursor: pointer;
-
-    backdrop-filter: blur(6px);
-}
-
-.cosmos-reset-stars-button:hover {
-    background: rgba(20, 35, 75, 0.85);
-}
-
 .cosmos-control-panel {
-    padding: 14px 16px 24px;
-
-    color: rgba(224, 236, 255, 0.94);
-    background:
-        radial-gradient(
-            circle at 20% 0%,
-            rgba(70, 120, 255, 0.18),
-            transparent 32%
-        ),
-        linear-gradient(
-            180deg,
-            rgba(5, 10, 26, 0.96),
-            rgba(2, 5, 14, 0.98)
-        );
+    padding: 18px;
+    overflow-y: auto;
 }
 
-.cosmos-control-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    margin-bottom: 10px;
-    padding-bottom: 10px;
-
-    border-bottom: 1px solid rgba(130, 180, 255, 0.18);
-}
-
-.cosmos-control-header h2 {
-    margin: 0;
-
+.cosmos-control-panel h2 {
+    margin-top: 0;
     color: rgba(235, 245, 255, 0.96);
-    font-size: 18px;
-    font-weight: 650;
-}
-
-.cosmos-control-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.cosmos-control-reset-all-button,
-.cosmos-control-close-button {
-    height: 28px;
-
-    border: 1px solid rgba(160, 190, 255, 0.28);
-    border-radius: 6px;
-
-    background: rgba(8, 18, 42, 0.72);
-    color: rgba(230, 240, 255, 0.86);
-
-    cursor: pointer;
-}
-
-.cosmos-control-reset-all-button {
-    padding: 0 9px;
-
-    font-size: 12px;
-}
-
-.cosmos-control-close-button {
-    width: 28px;
-}
-
-.cosmos-control-reset-all-button:hover,
-.cosmos-control-close-button:hover {
-    background: rgba(45, 80, 150, 0.72);
 }
 
 .cosmos-control-panel > p {
-    margin: 0 0 14px;
-
-    color: rgba(190, 210, 240, 0.72);
-    font-size: 12px;
+    color: rgba(220, 230, 255, 0.62);
+    margin-bottom: 18px;
 }
 
-.cosmos-settings-section {
-    margin: 0 0 12px;
+.cosmos-control-section {
+    margin-bottom: 18px;
+    padding: 16px;
 
+    border-radius: 16px;
     border: 1px solid rgba(120, 170, 255, 0.16);
-    border-radius: 8px;
 
-    background: rgba(7, 14, 32, 0.58);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(90, 130, 255, 0.12),
+            transparent 38%
+        ),
+        rgba(12, 16, 26, 0.72);
 }
 
-.cosmos-settings-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    padding: 10px 12px;
-
-    cursor: pointer;
-}
-
-.cosmos-section-reset-button {
-    padding: 3px 8px;
-
-    border: 1px solid rgba(150, 190, 255, 0.24);
-    border-radius: 5px;
-
-    background: rgba(20, 38, 78, 0.58);
-    color: rgba(225, 238, 255, 0.82);
-
-    font-size: 11px;
-    cursor: pointer;
-}
-
-.cosmos-section-reset-button:hover {
-    background: rgba(45, 80, 150, 0.68);
-}
-
-.cosmos-settings-section-title-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.cosmos-settings-section-arrow {
-    color: rgba(125, 183, 255, 0.78);
-    font-size: 10px;
-}
-
-.cosmos-settings-section-title {
-    margin: 0;
-
-    color: rgba(230, 240, 255, 0.92);
-    font-size: 13px;
-    font-weight: 650;
-}
-
-.cosmos-settings-section-description {
-    margin: 0;
-    padding: 0 12px 8px;
-
-    color: rgba(185, 205, 235, 0.68);
-    font-size: 12px;
-}
-
-.cosmos-settings-section-content {
-    padding: 0 12px 8px;
-}
-
-.cosmos-control-panel .setting-item {
-    border-top-color: rgba(120, 170, 255, 0.12);
-}
-
-.cosmos-control-panel .setting-item-name {
-    color: rgba(232, 242, 255, 0.9);
-    font-size: 12px;
-}
-
-.cosmos-control-panel .setting-item-description {
-    color: rgba(180, 200, 230, 0.62);
-    font-size: 11px;
-}
-
-.cosmos-performance-warning {
-    display: none;
-    margin: 0 0 8px;
-    padding: 7px 9px;
-
-    border: 1px solid rgba(255, 190, 110, 0.35);
-    border-radius: 6px;
-
-    background: rgba(70, 42, 10, 0.42);
-    color: rgba(255, 225, 180, 0.92);
-
-    font-size: 11px;
-    line-height: 1.35;
-}
-
-.cosmos-performance-warning.is-visible {
-    display: block;
-}
-
-.cosmos-system-stats {
-    position: absolute;
-    left: 14px;
-    top: 14px;
-    z-index: 11;
-
-    min-width: 220px;
-
-    border: 1px solid rgba(130, 180, 255, 0.26);
-    border-radius: 8px;
-
-    background: rgba(3, 8, 20, 0.72);
-    color: rgba(225, 238, 255, 0.92);
-
-    font-size: 12px;
-
-    backdrop-filter: blur(8px);
-    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
-}
-
-.cosmos-system-stats.is-floating {
-    opacity: 0.58;
-}
-
-.cosmos-system-stats-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    padding: 7px 8px;
-
-    border-bottom: 1px solid rgba(130, 180, 255, 0.16);
-
-    color: rgba(235, 245, 255, 0.95);
-    font-weight: 650;
-
-    cursor: move;
-    user-select: none;
-}
-
-.cosmos-system-stats-actions {
-    display: flex;
-    gap: 4px;
-}
-
-.cosmos-system-stats-button {
-    height: 22px;
-
-    border: 1px solid rgba(150, 190, 255, 0.24);
-    border-radius: 5px;
-
-    background: rgba(20, 38, 78, 0.7);
-    color: rgba(225, 238, 255, 0.88);
-
-    font-size: 11px;
-    cursor: pointer;
-}
-
-.cosmos-system-stats-body {
-    padding: 7px 8px 8px;
-}
-
-.cosmos-system-stats-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-
-    line-height: 1.55;
-}
-
-.cosmos-system-stats-row span:first-child {
-    color: rgba(180, 205, 240, 0.72);
-}
-
-.cosmos-system-stats-row span:last-child {
-    color: rgba(235, 245, 255, 0.94);
-    font-variant-numeric: tabular-nums;
-}
-
-.cosmos-system-stats-divider {
-    height: 1px;
-    margin: 5px 0;
-
-    background: rgba(130, 180, 255, 0.14);
-}
-
-.cosmos-system-stats-toggle {
-    position: absolute;
-    left: 14px;
-    top: 14px;
-    z-index: 11;
-
-    padding: 6px 10px;
-
-    border: 1px solid rgba(130, 180, 255, 0.3);
-    border-radius: 8px;
-
-    background: rgba(3, 8, 20, 0.72);
-    color: rgba(225, 238, 255, 0.9);
-
-    font-size: 12px;
-    cursor: pointer;
-
-    backdrop-filter: blur(8px);
-}
-
-.cosmos-system-stats-toggle:hover {
-    background: rgba(28, 54, 108, 0.78);
-}
-
-.cosmos-direction-control {
-    position: relative;
-
-    width: 88px;
-    height: 88px;
-
-    border: 1px solid rgba(160, 190, 255, 0.38);
-    border-radius: 50%;
-
-    background: rgba(5, 10, 24, 0.45);
-
-    cursor: pointer;
-}
-
-.cosmos-direction-control::before {
-    content: "";
-
-    position: absolute;
-    inset: 50%;
-
-    width: 6px;
-    height: 6px;
-
-    border-radius: 50%;
-
-    background: rgba(210, 230, 255, 0.8);
-
-    transform: translate(-50%, -50%);
-}
-
-.cosmos-direction-control-line {
-    position: absolute;
-    left: 44px;
-    top: 44px;
-
-    width: 34px;
-    height: 1px;
-
-    background: rgba(125, 183, 255, 0.75);
-
-    transform-origin: 0 50%;
-}
-
-.cosmos-direction-control-handle {
-    position: absolute;
-
-    width: 14px;
-    height: 14px;
-
-    border: 2px solid rgba(230, 242, 255, 0.95);
-    border-radius: 50%;
-
-    background: rgba(85, 150, 255, 0.95);
-    box-shadow: 0 0 10px rgba(125, 183, 255, 0.65);
-
-    transform: translate(-50%, -50%);
-    pointer-events: none;
+.cosmos-control-section h3 {
+    margin-top: 0;
+    margin-bottom: 12px;
+
+    color: rgba(235, 245, 255, 0.9);
 }

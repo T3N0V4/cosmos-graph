@@ -1,13 +1,8 @@
 import { Plugin } from "obsidian";
 
 import { CosmosRenderer } from "./render/cosmosRenderer";
-
 import { CosmosSettingTab } from "./settings/settingsTab";
-
-import {
-    CosmosSettings,
-    DEFAULT_SETTINGS
-} from "./settings/settings";
+import { CosmosSettings, DEFAULT_SETTINGS } from "./settings/settings";
 
 import {
     CosmosControlView,
@@ -15,8 +10,7 @@ import {
 } from "./ui/cosmosControlView";
 
 export default class CosmosGraphPlugin extends Plugin {
-    settings: CosmosSettings =
-        structuredClone(DEFAULT_SETTINGS);
+    settings: CosmosSettings = DEFAULT_SETTINGS;
 
     renderer: CosmosRenderer | null = null;
 
@@ -24,57 +18,35 @@ export default class CosmosGraphPlugin extends Plugin {
         await this.loadSettings();
 
         this.renderer = new CosmosRenderer(this);
-
         this.renderer.start();
-
-        /*
-            CUSTOM VIEW
-        */
         this.registerView(
-            COSMOS_CONTROL_VIEW_TYPE,
-            (leaf) =>
-                new CosmosControlView(
-                    leaf,
-                    this
-                )
-        );
+        COSMOS_CONTROL_VIEW_TYPE,
+        (leaf) => new CosmosControlView(leaf, this)
+    );
 
-        /*
-            RIBBON BUTTON
-        */
-        this.addRibbonIcon(
-            "sparkles",
-            "Open Cosmos Control",
-            () => {
-                this.activateCosmosControlView();
-            }
-        );
+    this.addRibbonIcon(
+        "sparkles",
+        "Open Cosmos Control",
+        () => {
+            this.activateCosmosControlView();
+        }
+    );
 
-        /*
-            COMMAND
-        */
-        this.addCommand({
-            id: "open-cosmos-control",
-            name: "Open Cosmos Control",
-            callback: () => {
-                this.activateCosmosControlView();
-            }
-        });
+    this.addCommand({
+        id: "open-cosmos-control",
+        name: "Open Cosmos Control",
+        callback: () => {
+            this.activateCosmosControlView();
+        }
+    });
 
-        /*
-            SETTINGS TAB
-        */
         this.addSettingTab(
-            new CosmosSettingTab(
-                this.app,
-                this
-            )
+            new CosmosSettingTab(this.app, this)
         );
     }
 
     onunload() {
         this.renderer?.destroy();
-
         this.renderer = null;
     }
 
@@ -87,43 +59,32 @@ export default class CosmosGraphPlugin extends Plugin {
     }
 
     async saveSettings() {
-        await this.saveData(
-            this.settings
-        );
-
+        await this.saveData(this.settings);
         this.renderer?.reloadSettings();
     }
 
-    async resetSettings() {
-        this.settings =
-            structuredClone(
-                DEFAULT_SETTINGS
-            );
-
-        await this.saveSettings();
-    }
-
     async activateCosmosControlView() {
-        const leaves =
-            this.app.workspace.getLeavesOfType(
-                COSMOS_CONTROL_VIEW_TYPE
-            );
+    const leaves =
+        this.app.workspace.getLeavesOfType(
+            COSMOS_CONTROL_VIEW_TYPE
+        );
 
-        if (leaves.length > 0) {
-            await leaves[0].detach();
-            return;
-        }
-
-        const leaf =
-            this.app.workspace.getRightLeaf(false);
-
-        if (!leaf) return;
-
-        await leaf.setViewState({
-            type: COSMOS_CONTROL_VIEW_TYPE,
-            active: true
-        });
-
-        this.app.workspace.revealLeaf(leaf);
+    if (leaves.length > 0) {
+        this.app.workspace.revealLeaf(leaves[0]);
+        return;
     }
+
+    const leaf =
+        this.app.workspace.getRightLeaf(false);
+
+    if (!leaf) return;
+
+    await leaf.setViewState({
+        type: COSMOS_CONTROL_VIEW_TYPE,
+        active: true
+    });
+
+    this.app.workspace.revealLeaf(leaf);
+}
+
 }

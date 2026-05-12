@@ -1,6 +1,5 @@
 import { Setting } from "obsidian";
-import type { CosmosGraphPluginType } from "../types/cosmosTypes";
-import { addSectionReset } from "./addSectionReset";
+import type { CosmosGraphPluginType } from "../settings/cosmosTypes";
 import { createSettingSection } from "./createSettingSection";
 
 export function renderUniverseSettings(
@@ -8,38 +7,44 @@ export function renderUniverseSettings(
     plugin: CosmosGraphPluginType
 ) {
     const section = createSettingSection(
-    containerEl,
-    "Particles",
-        {
-            description: "Base appearance of ambient particles."
-        }
+        containerEl,
+        "Universe",
+        "Control star amount, size, color, speed and initial distribution."
     );
 
-    addSectionReset(
-        section,
-        plugin,
-        [
-            "autoSpawnAmount",
-            "initialCleanRadiusRatio",
-            "initialMinRadiusRatio",
-            "initialMaxRadiusRatio",
-            "initialClusterChance",
-            "starMinSize",
-            "starMaxSize",
-            "starHueMin",
-            "starHueMax",
-            "particleColor",
-            "baseSpeed",
-            "particleGlow",
-            "particleBrightness"
-        ]
-    );
+    new Setting(section)
+        .setName("Initial particles")
+        .setDesc("Amount of stars created when the graph opens.")
+        .addSlider(slider =>
+            slider
+                .setLimits(50, 700, 10)
+                .setValue(plugin.settings.particleCount)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.particleCount = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-const sectionEl = section.contentEl;
+    new Setting(section)
+        .setName("Max particles")
+        .setDesc("Maximum amount of ambient stars.")
+        .addSlider(slider =>
+            slider
+                .setLimits(50, 1000, 10)
+                .setValue(plugin.settings.maxParticles)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.maxParticles = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    new Setting(sectionEl)
-        .setName("Particle base speed")
-        .setDesc("Base movement speed of ambient particles.")
+    new Setting(section)
+        .setName("Base speed")
+        .setDesc("Base movement speed of ambient stars.")
         .addSlider(slider =>
             slider
                 .setLimits(0.02, 1, 0.02)
@@ -48,96 +53,176 @@ const sectionEl = section.contentEl;
                 .onChange(async value => {
                     plugin.settings.baseSpeed = value;
                     await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(sectionEl)
-        .setName("Particle color")
-        .setDesc("Base color used by ambient particles.")
-        .addColorPicker(color =>
-            color
-                .setValue(
-                    getValidHexColor(
-                        plugin.settings.particleColor
-                    )
-                )
-                .onChange(async value => {
-                    const hue = hexToHue(value);
-
-                    plugin.settings.particleColor = value;
-                    plugin.settings.starHueMin = hue;
-                    plugin.settings.starHueMax = hue;
-
-                    await plugin.saveSettings();
-                })
-        );
-
-    new Setting(sectionEl)
-        .setName("Particle glow")
-        .setDesc("Base glow intensity of ambient particles.")
+    new Setting(section)
+        .setName("Star min size")
+        .setDesc("Minimum size of ambient stars.")
         .addSlider(slider =>
             slider
-                .setLimits(0, 0.4, 0.01)
-                .setValue(plugin.settings.particleGlow)
+                .setLimits(0.1, 3, 0.05)
+                .setValue(plugin.settings.starMinSize)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    plugin.settings.particleGlow = value;
+                    plugin.settings.starMinSize = value;
                     await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(sectionEl)
-        .setName("Particle brightness")
-        .setDesc("Brightness multiplier for ambient particles.")
+    new Setting(section)
+        .setName("Star max size")
+        .setDesc("Maximum size of ambient stars.")
         .addSlider(slider =>
             slider
-                .setLimits(0.2, 2, 0.05)
-                .setValue(plugin.settings.particleBrightness)
+                .setLimits(0.2, 5, 0.05)
+                .setValue(plugin.settings.starMaxSize)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    plugin.settings.particleBrightness = value;
+                    plugin.settings.starMaxSize = value;
                     await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
-}
 
-function getValidHexColor(value: string) {
-    if (/^#[0-9a-fA-F]{6}$/.test(value)) {
-        return value;
-    }
+    new Setting(section)
+        .setName("Star hue min")
+        .setDesc("Minimum hue value for ambient stars.")
+        .addSlider(slider =>
+            slider
+                .setLimits(0, 360, 1)
+                .setValue(plugin.settings.starHueMin)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.starHueMin = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    return "#7db7ff";
-}
+    new Setting(section)
+        .setName("Star hue max")
+        .setDesc("Maximum hue value for ambient stars.")
+        .addSlider(slider =>
+            slider
+                .setLimits(0, 360, 1)
+                .setValue(plugin.settings.starHueMax)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.starHueMax = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-function hexToHue(hex: string) {
-    const cleanHex = hex.replace("#", "");
+    new Setting(section)
+        .setName("Clean center radius")
+        .setDesc("How empty the center starts.")
+        .addSlider(slider =>
+            slider
+                .setLimits(0.05, 0.5, 0.01)
+                .setValue(plugin.settings.initialCleanRadiusRatio)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.initialCleanRadiusRatio = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    const r =
-        parseInt(cleanHex.substring(0, 2), 16) / 255;
+    new Setting(section)
+        .setName("Periphery min radius")
+        .setDesc("Minimum initial distance from the center.")
+        .addSlider(slider =>
+            slider
+                .setLimits(0.05, 0.5, 0.01)
+                .setValue(plugin.settings.initialMinRadiusRatio)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.initialMinRadiusRatio = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    const g =
-        parseInt(cleanHex.substring(2, 4), 16) / 255;
+    new Setting(section)
+        .setName("Periphery max radius")
+        .setDesc("Maximum initial distance from the center.")
+        .addSlider(slider =>
+            slider
+                .setLimits(0.1, 0.6, 0.01)
+                .setValue(plugin.settings.initialMaxRadiusRatio)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.initialMaxRadiusRatio = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    const b =
-        parseInt(cleanHex.substring(4, 6), 16) / 255;
+    new Setting(section)
+        .setName("Constellation clustering")
+        .setDesc("Chance of stars grouping into constellation-like arcs.")
+        .addSlider(slider =>
+            slider
+                .setLimits(0, 1, 0.01)
+                .setValue(plugin.settings.initialClusterChance)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.initialClusterChance = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const delta = max - min;
+    const autoSpawnSection = createSettingSection(
+        containerEl,
+        "Auto Spawn",
+        "Control progressive star generation after the universe has started."
+    );
 
-    if (delta === 0) {
-        return 0;
-    }
+    new Setting(autoSpawnSection)
+        .setName("Auto spawn")
+        .setDesc("Generate new stars progressively.")
+        .addToggle(toggle =>
+            toggle
+                .setValue(plugin.settings.enableAutoSpawn)
+                .onChange(async value => {
+                    plugin.settings.enableAutoSpawn = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    let hue = 0;
+    new Setting(autoSpawnSection)
+        .setName("Auto spawn interval")
+        .setDesc("Time between automatic star generation, in milliseconds.")
+        .addSlider(slider =>
+            slider
+                .setLimits(250, 5000, 250)
+                .setValue(plugin.settings.autoSpawnIntervalMs)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.autoSpawnIntervalMs = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 
-    if (max === r) {
-        hue = ((g - b) / delta) % 6;
-    } else if (max === g) {
-        hue = (b - r) / delta + 2;
-    } else {
-        hue = (r - g) / delta + 4;
-    }
-
-    return Math.round((hue * 60 + 360) % 360);
+    new Setting(autoSpawnSection)
+        .setName("Auto spawn amount")
+        .setDesc("How many stars are generated per interval.")
+        .addSlider(slider =>
+            slider
+                .setLimits(1, 10, 1)
+                .setValue(plugin.settings.autoSpawnAmount)
+                .setDynamicTooltip()
+                .onChange(async value => {
+                    plugin.settings.autoSpawnAmount = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
+                })
+        );
 }

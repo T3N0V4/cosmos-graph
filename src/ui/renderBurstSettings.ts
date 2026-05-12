@@ -1,7 +1,5 @@
 import { Setting } from "obsidian";
-import type { CosmosGraphPluginType } from "../types/cosmosTypes";
-import { updateSetting } from "../util/updateSetting";
-import { addSectionReset } from "./addSectionReset";
+import type { CosmosGraphPluginType } from "../settings/cosmosTypes";
 import { createSettingSection } from "./createSettingSection";
 
 export function renderBurstSettings(
@@ -10,43 +8,27 @@ export function renderBurstSettings(
 ) {
     const burstSection = createSettingSection(
         containerEl,
-        "Burst",
-        {
-            description:
-                "Shared behavior for click burst effects."
-        }
+        "Bursts",
+        "Control global burst behavior, cooldown and glow."
     );
 
-    addSectionReset(
-        burstSection,
-        plugin,
-        [
-            "gravityCooldownMs",
-            "burstParticleLimit",
-            "burstGlowIntensity",
-            "burstGlowSize"
-        ]
-    );
-
-    new Setting(burstSection.contentEl)
-        .setName("Cooldown")
-        .setDesc("Time before another burst can be used.")
+    new Setting(burstSection)
+        .setName("Cooldown Burst")
+        .setDesc("Global cooldown for all burst effects, in seconds.")
         .addSlider(slider =>
             slider
                 .setLimits(0.5, 8, 0.5)
                 .setValue(plugin.settings.gravityCooldownMs / 1000)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "gravityCooldownMs",
-                        value * 1000
-                    );
+                    plugin.settings.gravityCooldownMs = value * 1000;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(burstSection.contentEl)
-        .setName("Particle Limit")
+    new Setting(burstSection)
+        .setName("Burst particle limit")
         .setDesc("Maximum amount of temporary burst particles.")
         .addSlider(slider =>
             slider
@@ -54,16 +36,14 @@ export function renderBurstSettings(
                 .setValue(plugin.settings.burstParticleLimit)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "burstParticleLimit",
-                        value
-                    );
+                    plugin.settings.burstParticleLimit = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(burstSection.contentEl)
-        .setName("Glow")
+    new Setting(burstSection)
+        .setName("Burst glow intensity")
         .setDesc("Brightness of burst particle glow.")
         .addSlider(slider =>
             slider
@@ -71,16 +51,14 @@ export function renderBurstSettings(
                 .setValue(plugin.settings.burstGlowIntensity)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "burstGlowIntensity",
-                        value
-                    );
+                    plugin.settings.burstGlowIntensity = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(burstSection.contentEl)
-        .setName("Glow Size")
+    new Setting(burstSection)
+        .setName("Burst glow size")
         .setDesc("Size of burst glow aura.")
         .addSlider(slider =>
             slider
@@ -88,34 +66,20 @@ export function renderBurstSettings(
                 .setValue(plugin.settings.burstGlowSize)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "burstGlowSize",
-                        value
-                    );
+                    plugin.settings.burstGlowSize = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
     const radialSection = createSettingSection(
         containerEl,
         "Radial Burst",
-        {
-            description:
-                "Control circular click explosions."
-        }
+        "Control circular click explosions."
     );
 
-    addSectionReset(
-        radialSection,
-        plugin,
-        [
-            "radialBurstAmount",
-            "radialCoreAmount"
-        ]
-    );
-
-    new Setting(radialSection.contentEl)
-        .setName("Amount")
+    new Setting(radialSection)
+        .setName("Radial particles")
         .setDesc("Amount of particles in radial burst.")
         .addSlider(slider =>
             slider
@@ -123,16 +87,14 @@ export function renderBurstSettings(
                 .setValue(plugin.settings.radialBurstAmount)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "radialBurstAmount",
-                        value
-                    );
+                    plugin.settings.radialBurstAmount = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(radialSection.contentEl)
-        .setName("Core Density")
+    new Setting(radialSection)
+        .setName("Radial core particles")
         .setDesc("Amount of slower particles near the center of radial burst.")
         .addSlider(slider =>
             slider
@@ -140,35 +102,20 @@ export function renderBurstSettings(
                 .setValue(plugin.settings.radialCoreAmount)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "radialCoreAmount",
-                        value
-                    );
+                    plugin.settings.radialCoreAmount = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
     const directionalSection = createSettingSection(
         containerEl,
         "Directional Burst",
-        {
-            description:
-                "Control cone-shaped bursts fired away from the graph center."
-        }
+        "Control cone-shaped bursts fired away from the graph center."
     );
 
-    addSectionReset(
-        directionalSection,
-        plugin,
-        [
-            "directionalBurstAmount",
-            "directionalAngle",
-            "directionalSpread"
-        ]
-    );
-
-    new Setting(directionalSection.contentEl)
-        .setName("Amount")
+    new Setting(directionalSection)
+        .setName("Directional particles")
         .setDesc("Amount of particles in directional burst.")
         .addSlider(slider =>
             slider
@@ -176,58 +123,35 @@ export function renderBurstSettings(
                 .setValue(plugin.settings.directionalBurstAmount)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "directionalBurstAmount",
-                        value
-                    );
+                    plugin.settings.directionalBurstAmount = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    createDirectionControl(
-        directionalSection.contentEl,
-        plugin
-    );
-
-    new Setting(directionalSection.contentEl)
-        .setName("Cone Width")
-        .setDesc("How wide the particle cone becomes.")
+    new Setting(directionalSection)
+        .setName("Directional spread")
+        .setDesc("Opening angle of directional burst.")
         .addSlider(slider =>
             slider
                 .setLimits(0.01, 1, 0.01)
                 .setValue(plugin.settings.directionalSpread)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "directionalSpread",
-                        value
-                    );
+                    plugin.settings.directionalSpread = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
     const gravitySection = createSettingSection(
         containerEl,
         "Gravity Burst",
-        {
-            description:
-                "Control click bursts that pull particles back toward the click point."
-        }
+        "Control click bursts that pull particles back toward the click point."
     );
 
-    addSectionReset(
-        gravitySection,
-        plugin,
-        [
-            "gravityBurstAmount",
-            "gravityForce",
-            "gravityDurationMs",
-            "gravityBounceDistance"
-        ]
-    );
-
-    new Setting(gravitySection.contentEl)
-        .setName("Amount")
+    new Setting(gravitySection)
+        .setName("Gravity particles")
         .setDesc("Amount of particles in gravity burst.")
         .addSlider(slider =>
             slider
@@ -235,185 +159,54 @@ export function renderBurstSettings(
                 .setValue(plugin.settings.gravityBurstAmount)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "gravityBurstAmount",
-                        value
-                    );
+                    plugin.settings.gravityBurstAmount = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(gravitySection.contentEl)
-        .setName("Gravity Strength")
-        .setDesc("Strength of attraction in this burst.")
+    new Setting(gravitySection)
+        .setName("Gravity force")
+        .setDesc("Strength of attraction in gravity burst.")
         .addSlider(slider =>
             slider
                 .setLimits(10, 300, 5)
                 .setValue(plugin.settings.gravityForce)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "gravityForce",
-                        value
-                    );
+                    plugin.settings.gravityForce = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(gravitySection.contentEl)
-        .setName("Gravity Duration")
-        .setDesc("How long burst particles stay temporary.")
+    new Setting(gravitySection)
+        .setName("Gravity duration")
+        .setDesc("Duration of gravity burst in milliseconds.")
         .addSlider(slider =>
             slider
                 .setLimits(500, 8000, 100)
                 .setValue(plugin.settings.gravityDurationMs)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "gravityDurationMs",
-                        value
-                    );
+                    plugin.settings.gravityDurationMs = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
 
-    new Setting(gravitySection.contentEl)
-        .setName("Collapse Distance")
-        .setDesc("Distance from the center where the pull tightens.")
+    new Setting(gravitySection)
+        .setName("Gravity bounce distance")
+        .setDesc("Distance from center where particles bounce outward.")
         .addSlider(slider =>
             slider
                 .setLimits(2, 80, 1)
                 .setValue(plugin.settings.gravityBounceDistance)
                 .setDynamicTooltip()
                 .onChange(async value => {
-                    await updateSetting(
-                        plugin,
-                        "gravityBounceDistance",
-                        value
-                    );
+                    plugin.settings.gravityBounceDistance = value;
+                    await plugin.saveSettings();
+                    plugin.renderer?.reloadSettings();
                 })
         );
-}
-
-function createDirectionControl(
-    containerEl: HTMLElement,
-    plugin: CosmosGraphPluginType
-) {
-    const setting =
-        new Setting(containerEl)
-            .setName("Shooting Direction")
-            .setDesc("Direction used by directional bursts.");
-
-    const padEl =
-        setting.controlEl.createDiv({
-            cls: "cosmos-direction-control"
-        });
-
-    const lineEl =
-        padEl.createDiv({
-            cls: "cosmos-direction-control-line"
-        });
-
-    const handleEl =
-        padEl.createDiv({
-            cls: "cosmos-direction-control-handle"
-        });
-
-    const updateVisual = () => {
-        const angle =
-            plugin.settings.directionalAngle;
-
-        const radius = 34;
-        const center = 44;
-
-        const x =
-            center +
-            Math.cos(angle) * radius;
-
-        const y =
-            center +
-            Math.sin(angle) * radius;
-
-        handleEl.style.left =
-            `${x}px`;
-
-        handleEl.style.top =
-            `${y}px`;
-
-        lineEl.style.transform =
-            `rotate(${angle}rad)`;
-    };
-
-    const updateValue = async (
-        event: MouseEvent
-    ) => {
-        const rect =
-            padEl.getBoundingClientRect();
-
-        const centerX =
-            rect.left + rect.width / 2;
-
-        const centerY =
-            rect.top + rect.height / 2;
-
-        const angle =
-            Math.atan2(
-                event.clientY - centerY,
-                event.clientX - centerX
-            );
-
-        plugin.settings.directionalAngle =
-            angle;
-
-        updateVisual();
-
-        await plugin.saveSettings();
-    };
-
-    let isDragging = false;
-
-    const handleMouseMove = (
-        event: MouseEvent
-    ) => {
-        if (!isDragging) {
-            return;
-        }
-
-        void updateValue(event);
-    };
-
-    const handleMouseUp = () => {
-        isDragging = false;
-
-        document.removeEventListener(
-            "mousemove",
-            handleMouseMove
-        );
-
-        document.removeEventListener(
-            "mouseup",
-            handleMouseUp
-        );
-    };
-
-    padEl.addEventListener(
-        "mousedown",
-        (event) => {
-            isDragging = true;
-
-            void updateValue(event);
-
-            document.addEventListener(
-                "mousemove",
-                handleMouseMove
-            );
-
-            document.addEventListener(
-                "mouseup",
-                handleMouseUp
-            );
-        }
-    );
-
-    updateVisual();
 }
